@@ -1,0 +1,49 @@
+/**
+ * File: gconfig.h
+ * Author: Diego Parrilla Santamaría
+ * Date: November 2024
+ * Copyright: 2024 - GOODDATA LABS SL
+ * Description: Header file for the global configuration manager
+ */
+
+#ifndef GCONFIG_H
+#define GCONFIG_H
+
+#include "constants.h"
+#include "debug.h"
+#include "settings.h"
+
+#define PARAM_BOOT_FEATURE "BOOT_FEATURE"
+#define PARAM_HOSTNAME "HOSTNAME"
+#define PARAM_WIFI_AUTH "WIFI_AUTH"
+#define PARAM_WIFI_CONNECT_TIMEOUT "WIFI_CONNECT_TIMEOUT"
+#define PARAM_WIFI_COUNTRY "WIFI_COUNTRY"
+#define PARAM_WIFI_DHCP "WIFI_DHCP"
+#define PARAM_WIFI_DNS "WIFI_DNS"
+#define PARAM_WIFI_IP "WIFI_IP"
+#define PARAM_WIFI_MODE "WIFI_MODE"
+#define PARAM_WIFI_NETMASK "WIFI_NETMASK"
+#define PARAM_WIFI_GATEWAY "WIFI_GATEWAY"
+#define PARAM_WIFI_PASSWORD "WIFI_PASSWORD"
+#define PARAM_WIFI_POWER "WIFI_POWER"
+#define PARAM_WIFI_RSSI "WIFI_RSSI"
+#define PARAM_WIFI_SCAN_SECONDS "WIFI_SCAN_SECONDS"
+#define PARAM_WIFI_SSID "WIFI_SSID"
+#define PARAM_MODE "MODE"
+#define PARAM_MOUSE_SPEED "MOUSE_SPEED"
+#define PARAM_JOYSTICK_USB "JOYSTICK_USB"
+#define PARAM_JOYSTICK_USB_PORT "JOYSTICK_USB_PORT"
+#define PARAM_MOUSE_ORIGINAL "MOUSE_ORIGINAL"
+#define PARAM_BT_ENABLED "BT_ENABLED"
+#define PARAM_BT_KEYBOARD "BT_KEYBOARD"
+#define PARAM_BT_MOUSE "BT_MOUSE"
+#define PARAM_BT_GAMEPAD "BT_GAMEPAD"
+
+#define GCONFIG_SUCCESS 0
+#define GCONFIG_INIT_ERROR -1
+#define GCONFIG_MISMATCHED_APP -2
+
+int gconfig_init(const char *currentAppName);
+SettingsContext *gconfig_getContext(void);
+
+#endif  // GCONFIG_H
