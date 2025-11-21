@@ -29,9 +29,11 @@ MEMORY
     SCRATCH_X(rwx) : ORIGIN = 0x20040000, LENGTH = 4k
     SCRATCH_Y(rwx) : ORIGIN = 0x20041000, LENGTH = 4k
 
-    CONFIG_FLASH(rwx): ORIGIN = 0x101E0000, LENGTH = 120K /* At the top 120Kb of the Flash we have the config information. 30 sectors */
-    GLOBAL_LOOKUP_FLASH(rwx): ORIGIN = 0x101FE000, LENGTH = 4K /* The lookup table with apps UUID and the sector number of their config */
-    GLOBAL_CONFIG_FLASH(rwx): ORIGIN = 0x101FF000, LENGTH = 4K /* At the top 4KB of the Flash we have the global lookup information */
+    CONFIG_FLASH(rwx): ORIGIN = 0x101DE000, LENGTH = 120K /* Config information just below lookup/config/tlv blocks. 30 sectors */
+    GLOBAL_LOOKUP_FLASH(rwx): ORIGIN = 0x101FC000, LENGTH = 4K /* The lookup table with apps UUID and the sector number of their config */
+    GLOBAL_CONFIG_FLASH(rwx): ORIGIN = 0x101FD000, LENGTH = 4K /* Global configuration information */
+    BT_TLV(rwx): ORIGIN = 0x101FE000, LENGTH = 8K /* Bluetooth TLV data at the top of Flash */
+    
 }
 
 ENTRY(_entry_point)
@@ -285,6 +287,14 @@ SECTIONS
         _global_config_flash_end = .;
     } > GLOBAL_CONFIG_FLASH
 
+    .btstack_tlv_data (NOLOAD) :
+    {
+        __btstack_tlv_start__ = .;
+        FILL(0xFF)
+        . = __btstack_tlv_start__ + LENGTH(BT_TLV); /* Reserve the entire BT_TLV region */
+        __btstack_tlv_end__ = .;
+    } > BT_TLV
+
 
 
 
@@ -315,4 +325,3 @@ SECTIONS
     ASSERT( __binary_info_header_end - __logical_binary_start <= 256, "Binary info must be in first 256 bytes of the binary")
     /* todo assert on extra code */
 }
-
