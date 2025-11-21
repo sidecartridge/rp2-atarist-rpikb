@@ -32,7 +32,18 @@
 #define JOY0_FIRE 20
 
 // Time macros
-#define SEC_TO_MS 1000
+#define SEC_TO_MS 1000ULL
+#define SEC_TO_US 1000000ULL
+#define SEC_TO_NS 1000000000ULL
+
+// Toggle IKBD source time in seconds
+#define TOGGLE_IKBD_SOURCE_HOLD_TIME_SEC 3
+
+// Enter into configuration mode time in seconds
+#define ENTER_CONFIG_MODE_HOLD_TIME_SEC 10
+
+// Ignore resets longer than this (in seconds)
+#define MAX_RESET_HOLD_TIME_SEC 20
 
 // Frequency constants.
 #define SAMPLE_DIV_FREQ (1.f)         // Sample frequency division factor.
