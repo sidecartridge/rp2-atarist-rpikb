@@ -4,14 +4,16 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "btstack_util.h"
+#include "btstack.h"
 #include "gconfig.h"
+#include "hardware/flash.h"
+#include "hardware/sync.h"
 #include "pico/async_context.h"
+#include "pico/btstack_flash_bank.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 #include "stkeys.h"
 #include "uni.h"
-
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -340,13 +342,24 @@ static void btloop_on_init_complete(void) {
   uni_bt_start_scanning_and_autoconnect_unsafe();
   // uni_bt_allow_incoming_connections(true);
 
-  // Based on runtime condition, you can delete or list the stored BT keys.
-  // if (1)
-  //   uni_bt_del_keys_unsafe();
-  // else
-  //   uni_bt_list_keys_unsafe();
+  // uni_bt_service_set_enabled(true);
 
-  uni_bt_service_set_enabled(true);
+  // uni_bt_allowlist_set_enabled(true);
+
+  // uni_bt_allowlist_add_addr((bd_addr_t){0x00, 0x11, 0x67, 0xF7, 0x0F,
+  //                                       0x03});  // Logitech Mouse example
+  // uni_bt_allowlist_add_addr(
+  //     (bd_addr_t){0x60, 0xC5, 0x47, 0x1E, 0x01, 0x74});  // Magic Keyboard
+
+  // uni_bt_allowlist_add_addr(
+  //     (bd_addr_t){0x76, 0x08, 0x31, 0x01, 0x49, 0x9B});  // ESYNYC
+
+  // uni_bt_allowlist_add_addr(
+  //     (bd_addr_t){0xEB, 0x60, 0x31, 0xFB, 0x69, 0xE2});  // Microsoft mouse
+
+  uni_bt_allowlist_list();
+
+  uni_bt_list_keys_unsafe();
 
   uni_property_dump_all();
 }
@@ -375,12 +388,13 @@ static void btloop_on_device_connected(uni_hid_device_t *d) {
 
 static void btloop_on_device_disconnected(uni_hid_device_t *d) {
   DPRINTF("btloop: device disconnected: %p\n", d);
+  uni_bt_list_keys_safe();
 }
 
 static uni_error_t btloop_on_device_ready(uni_hid_device_t *d) {
   DPRINTF("btloop: device ready: %p\n", d);
   // You can reject the connection by returning an error.
-
+  uni_bt_list_keys_safe();
   return UNI_ERROR_SUCCESS;
 }
 
@@ -551,10 +565,10 @@ struct uni_platform *get_my_bluepad32_code(void) {
 }
 
 int main_bt_bluepad32(int prev_reset_state, int prev_toggle_state,
-                      void (*handle_rx)(void)) {
+                      void (*handle_rx)(void),
+                      void (*reset_sequence_cb)(void)) {
   (void)prev_reset_state;
   (void)prev_toggle_state;
-  (void)handle_rx;
 
   // Mouse initialization
   mouse_init();
@@ -578,9 +592,9 @@ int main_bt_bluepad32(int prev_reset_state, int prev_toggle_state,
     DPRINTF("failed to initialise cyw43_arch\n");
     return -1;
   }
-
   // Must be called before uni_init()
   uni_platform_set_custom(get_my_bluepad32_code());
+
   // Initialize BP32
   uni_init(0, NULL);
 
@@ -590,6 +604,15 @@ int main_bt_bluepad32(int prev_reset_state, int prev_toggle_state,
   // Drive Bluepad32 / BTstack similarly to other BT loops.
   while (true) {
     btloop_tick();
+
+    if (handle_rx) {
+      handle_rx();
+    }
+
+    if (reset_sequence_cb) {
+      reset_sequence_cb();
+    }
+
     if (!btstack_paused) {
       async_context_poll(cyw43_arch_async_context());
     }
