@@ -58,11 +58,13 @@
 #define MAX_NR_WHITELIST_ENTRIES 16
 #define MAX_NR_LE_DEVICE_DB_ENTRIES 16
 
-// Limit number of ACL/SCO Buffer to use by stack to avoid cyw43 shared bus overrun
+// Limit number of ACL/SCO Buffer to use by stack to avoid cyw43 shared bus
+// overrun
 #define MAX_NR_CONTROLLER_ACL_BUFFERS 3
 #define MAX_NR_CONTROLLER_SCO_PACKETS 3
 
-// Enable and configure HCI Controller to Host Flow Control to avoid cyw43 shared bus overrun
+// Enable and configure HCI Controller to Host Flow Control to avoid cyw43
+// shared bus overrun
 #define ENABLE_HCI_CONTROLLER_TO_HOST_FLOW_CONTROL
 #define HCI_HOST_ACL_PACKET_LEN 1024
 #define HCI_HOST_ACL_PACKET_NUM 3
@@ -90,7 +92,7 @@
 
 #define HAVE_BTSTACK_STDIN
 
-// To get the audio demos working even with HCI dump at 115200, this truncates long ACL packets
-// #define HCI_DUMP_STDOUT_MAX_SIZE_ACL 100
+// To get the audio demos working even with HCI dump at 115200, this truncates
+// long ACL packets #define HCI_DUMP_STDOUT_MAX_SIZE_ACL 100
 
 #endif  // _PICO_BTSTACK_BTSTACK_CONFIG_H
