@@ -1,3 +1,4 @@
+#include <assert.h>
 #include <stdbool.h>
 
 #include "6301.h"
@@ -5,7 +6,9 @@
 #include "btloop.h"
 #include "debug.h"
 #include "gconfig.h"
-#include "hardware/clocks.h"
+#include "pico/btstack_flash_bank.h"
+#include "pico/cyw43_arch.h"
+#include "pico/flash.h"
 #include "pico/multicore.h"
 #include "pico/stdlib.h"
 #include "serialp.h"
@@ -39,6 +42,22 @@
 static uint64_t first_reset_sequence_us = 0;
 static bool waiting_for_reset_sequence = false;
 static bool reset_sequence_recorded = false;
+
+static void launch_config_cb(void) {
+  DPRINTF("launch_config_cb called\n");
+  // Enable both leds to indicate configuration mode
+  gpio_put(KBD_ATARI_OUT_3V3_GPIO, 1);
+  gpio_put(KBD_USB_OUT_3V3_GPIO, 1);
+  DPRINTF("Stopping the core 1...\n");
+  multicore_reset_core1();
+}
+
+static uint64_t get_first_reset_sequence_cb(void) {
+  if (!reset_sequence_recorded) {
+    return 0;
+  }
+  return first_reset_sequence_us;
+}
 
 // static absolute_time_t next_rx_time = {0};
 
@@ -89,11 +108,67 @@ static inline void select_no_source(void) {
   gpio_put(KBD_USB_OUT_3V3_GPIO, 0);
 }
 
-static void run_native_keyboard_mode(void) {
+void toogle_ikbd_source_cb(void) {
+  int atari_state = gpio_get(KBD_ATARI_OUT_3V3_GPIO);
+  int usb_state = gpio_get(KBD_USB_OUT_3V3_GPIO);
+
+  gpio_put(KBD_ATARI_OUT_3V3_GPIO, !atari_state);
+  gpio_put(KBD_USB_OUT_3V3_GPIO, !usb_state);
+
+  // Stop core 1 if switching to native keyboard mode
+  if (!atari_state) {
+    multicore_reset_core1();
+  }
+}
+
+static void handle_reset_sequence_cb(void) {
+  uint64_t reset_sequence = get_first_reset_sequence_cb();
+  if (reset_sequence == 0) {
+    return;
+  }
+
+  if (reset_sequence > (MAX_RESET_HOLD_TIME_SEC * SEC_TO_US)) {
+    // Ignore
+    return;
+  }
+
+  // DPRINTF("Reset sequence detected: %llu\n",
+  //         (unsigned long long)reset_sequence);
+
+  if (reset_sequence >= (ENTER_CONFIG_MODE_HOLD_TIME_SEC * SEC_TO_US)) {
+    DPRINTF("Entering configuration mode...\n");
+    DPRINTF("Stopping the CYW43 chipset...\n");
+    cyw43_arch_deinit();
+    DPRINTF("CYW43 stopped.\n");
+    DPRINTF("Launching configuration...\n");
+    launch_config_cb();
+    DPRINTF("You should not see this message... Halting.\n");
+    while (1) {
+      tight_loop_contents();
+    }
+  } else if (reset_sequence >= (TOGGLE_IKBD_SOURCE_HOLD_TIME_SEC * SEC_TO_US)) {
+    DPRINTF("Toggling IKBD source...\n");
+    toogle_ikbd_source_cb();
+    DPRINTF("Stopping the CYW43 chipset...\n");
+    cyw43_arch_deinit();
+    DPRINTF("CYW43 stopped. Halting.\n");
+    DPRINTF(
+        "The device is now in bypass mode. Restart to re-enable "
+        "Bluetooth.\n");
+    while (1) {
+      tight_loop_contents();
+    }
+  }
+}
+
+static void run_native_keyboard_mode(void (*reset_sequence_cb)(void)) {
   DPRINTF("Entering native keyboard mode (PARAM_MODE=0)\n");
   select_native_keyboard_source();
   while (true) {
     handle_rx_from_st();
+    if (reset_sequence_cb) {
+      reset_sequence_cb();
+    }
     tight_loop_contents();
   }
 }
@@ -126,70 +201,8 @@ static int get_keyboard_mode_from_settings(void) {
   return (int)parsed;
 }
 
-// static inline void handle_hid_found() {
-//   if (hidinput_if_ring_size() == 0) {
-//     return;
-//   }
-//   // Process HID device found in the ring buffer
-//   uint8_t dev_addr;
-//   uint8_t instance;
-//   while (hidinput_if_ring_pop(&dev_addr, &instance)) {
-//     tuh_itf_info_t itf_info;
-//     bool info_ok = tuh_hid_itf_get_info(dev_addr, instance, &itf_info);
-//     if (!info_ok) {
-//       DPRINTF(
-//           "HID ring entry but failed to fetch itf info: addr=%d
-//           instance=%d\n", dev_addr, instance);
-//       continue;
-//     }
-//     DPRINTF("HID device found: addr=%d(instance=%d), itf_num=%d\n", dev_addr,
-//             instance, itf_info.desc.bInterfaceNumber);
-
-//     DPRINTF("HID Interface Info: daddr=%d, itf_num=%d\r\n", itf_info.daddr,
-//             itf_info.desc.bInterfaceNumber);
-//     DPRINTF("HID Interface Class: %d\r\n", itf_info.desc.bInterfaceClass);
-//     DPRINTF("HID Interface SubClass: %d\r\n",
-//     itf_info.desc.bInterfaceSubClass); DPRINTF("HID Interface Protocol:
-//     %d\r\n", itf_info.desc.bInterfaceProtocol);
-
-//     // Interface protocol (hid_interface_protocol_enum_t)
-//     const char* protocol_str[] = {"None", "Keyboard", "Mouse", "",
-//     "Joystick"}; uint8_t const itf_protocol =
-//     tuh_hid_interface_protocol(dev_addr, instance);
-
-//     DPRINTF("HID Device Type: %s (%d)\r\n", protocol_str[itf_protocol],
-//             itf_protocol);
-
-//     static uint8_t dev_desc_buf[18] __attribute__((aligned(4)));
-//     bool ok = false;
-//     int retries = HID_DEV_DESC_MAX_RETRIES;
-//     do {
-//       ok = tuh_descriptor_get_device(dev_addr, dev_desc_buf,
-//                                      sizeof(dev_desc_buf),
-//                                      hidinput_device_descriptor_complete_cb,
-//                                      0);
-//       if (!ok) {
-//         retries--;
-//         if (retries > 0) {
-//           DPRINTF(
-//               "Descriptor request queue failed for device %u, retrying (%d "
-//               "left)\n",
-//               dev_addr, retries);
-//           sleep_ms(HID_DEV_DESC_RETRY_DELAY_MS);
-//         }
-//       }
-//     } while (!ok && retries > 0);
-//     if (!ok) {
-//       DPRINTF(
-//           "Failed to queue device descriptor request for device %u after %d "
-//           "retries\n",
-//           dev_addr, HID_DEV_DESC_MAX_RETRIES);
-//     }
-//   }
-// }
-
 static void core1_entry() {
-  // Setup the UART and HID instance.
+  flash_safe_execute_core_init();
 
   // Initialise the HD6301
   DPRINTF("HD6301 core started\n");
@@ -246,6 +259,10 @@ int main() {
   DPRINTF("Clock frequency: %i KHz\n", current_clock_frequency_khz);
   DPRINTF("Voltage: %s\n", current_voltage);
   DPRINTF("PICO_FLASH_SIZE_BYTES: %i\n", PICO_FLASH_SIZE_BYTES);
+  DPRINTF("PICO_FLASH_BANK_STORAGE_OFFSET: 0x%X\n",
+          (unsigned int)PICO_FLASH_BANK_STORAGE_OFFSET);
+  DPRINTF("PICO_FLASH_BANK_TOTAL_SIZE: %u bytes\n",
+          (unsigned int)PICO_FLASH_BANK_TOTAL_SIZE);
 
   unsigned int flash_length =
       (unsigned int)&_config_flash_start - (unsigned int)&__flash_binary_start;
@@ -254,6 +271,12 @@ int main() {
                                      (unsigned int)&_config_flash_start;
   unsigned int global_lookup_flash_length = FLASH_SECTOR_SIZE;
   unsigned int global_config_flash_length = FLASH_SECTOR_SIZE;
+  unsigned int bt_tlv_flash_length = 2 * FLASH_SECTOR_SIZE;
+  unsigned int bt_tlv_flash_start =
+      XIP_BASE + PICO_FLASH_SIZE_BYTES - bt_tlv_flash_length;
+
+  assert(PICO_FLASH_BANK_STORAGE_OFFSET == (bt_tlv_flash_start - XIP_BASE));
+  assert(PICO_FLASH_BANK_TOTAL_SIZE == bt_tlv_flash_length);
 
   DPRINTF("Flash start: 0x%X, length: %u bytes\n",
           (unsigned int)&__flash_binary_start, flash_length);
@@ -267,6 +290,8 @@ int main() {
   DPRINTF("Global Config Flash start: 0x%X, length: %u bytes\n",
           (unsigned int)&_global_config_flash_start,
           global_config_flash_length);
+  DPRINTF("BT TLV Flash start: 0x%X, length: %u bytes\n", bt_tlv_flash_start,
+          bt_tlv_flash_length);
 
 #endif
 
@@ -303,11 +328,15 @@ int main() {
     }
   }
 
-  // The second CPU core is dedicated to the HD6301 emulation.
+  // Core 1 runs the HD6301 emulation. BTStack/Bluepad32 flash persistence only
+  // worked reliably once Core 1 was enabled with
+  // PICO_FLASH_ASSUME_CORE1_SAFE=1; when Core 1 was disabled for development
+  // the flash writes silently failed. Keep Core 1 active when relying on
+  // BTStack TLV storage.
   DPRINTF("Starting HD6301 core...\n");
   multicore_launch_core1(core1_entry);
 
-  // Configure the input pins KBD RESET and BD0SEL
+  // Configure the input pins KBD RESET and BD0SEL0000
   gpio_init(KBD_RESET_IN_3V3_GPIO);
   gpio_set_dir(KBD_RESET_IN_3V3_GPIO, GPIO_IN);
   gpio_set_pulls(KBD_RESET_IN_3V3_GPIO, false,
@@ -334,15 +363,17 @@ int main() {
   keyboard_mode = 2;
   switch (keyboard_mode) {
     case KEYBOARD_MODE_NATIVE:
-      run_native_keyboard_mode();
+      run_native_keyboard_mode(handle_reset_sequence_cb);
       break;
     case KEYBOARD_MODE_USB:
       select_rp_keyboard_source();
-      main_usb_loop(prev_reset_state, prev_toggle_state, handle_rx_from_st);
+      main_usb_loop(prev_reset_state, prev_toggle_state, handle_rx_from_st,
+                    handle_reset_sequence_cb);
       break;
     case KEYBOARD_MODE_BT:
       select_rp_keyboard_source();
-      main_bt_bluepad32(prev_reset_state, prev_toggle_state, handle_rx_from_st);
+      main_bt_bluepad32(prev_reset_state, prev_toggle_state, handle_rx_from_st,
+                        handle_reset_sequence_cb);
       break;
     default:
       select_no_source();

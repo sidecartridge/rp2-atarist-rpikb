@@ -6,10 +6,7 @@
 
 #include "btstack.h"
 #include "gconfig.h"
-#include "hardware/flash.h"
-#include "hardware/sync.h"
 #include "pico/async_context.h"
-#include "pico/btstack_flash_bank.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 #include "stkeys.h"
