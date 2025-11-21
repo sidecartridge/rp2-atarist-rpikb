@@ -1,7 +1,11 @@
 #include "usbloop.h"
 
+// Provided by main.c
+void toogle_ikbd_source_cb(void);
+
 int main_usb_loop(int prev_reset_state, int prev_toggle_state,
-                  void (*handle_rx)(void)) {
+                  void (*handle_rx)(void),
+                  void (*reset_sequence_cb)(void)) {
   // Initialize the board (USB, HID, etc)
   DPRINTF("Initializing board...\n");
   hidinput_if_ring_init();
@@ -145,9 +149,14 @@ int main_usb_loop(int prev_reset_state, int prev_toggle_state,
         DPRINTF("GPIO KBD_TOOGLE_IN_3V3_GPIO changed: %d -> %d\n",
                 prev_toggle_state, toggle_state);
         prev_toggle_state = toggle_state;
+        toogle_ikbd_source_cb();
       }
       tuh_task();
       // handle_hid_found();
+    }
+
+    if (reset_sequence_cb) {
+      reset_sequence_cb();
     }
   }
   return -1;
