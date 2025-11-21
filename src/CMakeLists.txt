@@ -197,7 +197,7 @@ if(NOT DEFINED RELEASE_DATE)
 endif()
 
 if (NOT DEFINED _DEBUG)
-        set(_DEBUG 1)
+        set(_DEBUG 0)
 endif()
 
 # Debug outputs
@@ -249,6 +249,7 @@ target_compile_options(${PROJECT_NAME} PRIVATE -Wno-implicit-int)
 set(PICO_DEFAULT_BINARY_TYPE copy_to_ram)
 set(PICO_COPY_TO_RAM 1)
 
+set(PICO_FLASH_ASSUME_CORE1_SAFE 1)
 
 target_compile_definitions(${PROJECT_NAME}  PRIVATE
  HCI_CONTROLLER_CHIPSET_PICOW
