@@ -4,3 +4,6 @@
 [submodule "pico-extras"]
 	path = pico-extras
 	url = https://github.com/raspberrypi/pico-extras.git
+[submodule "bluepad32"]
+	path = bluepad32
+	url = git@github.com:diegoparrilla/bluepad32.git
