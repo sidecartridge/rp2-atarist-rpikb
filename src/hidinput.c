@@ -1,5 +1,7 @@
 #include "hidinput.h"
 
+#include "gconfig.h"
+
 // Atari ST key matrix indices for modifier keys
 #define ATARI_LSHIFT 42
 #define ATARI_RSHIFT 54
@@ -18,6 +20,15 @@ _Atomic int16_t pend_dy = 0;
 static int mouse_state = 0;
 static uint8_t mouse_buttons_hid = 0;
 static uint8_t joystick_fire_mask = 0;
+
+static const char* hidinput_get_usb_layout(void) {
+  SettingsConfigEntry* entry =
+      settings_find_entry(gconfig_getContext(), PARAM_USB_KB_LAYOUT);
+  if (entry != NULL && entry->value != NULL) {
+    return entry->value;
+  }
+  return "us";
+}
 
 // ---- HID interface info ring implementation ----
 #ifndef HID_IF_RING_CAP
@@ -203,6 +214,8 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
         break;  // nothing changed
       }
 
+      const char* layout = hidinput_get_usb_layout();
+
       // Clear keys that were in the previous report but not in the current
       for (int i = 0; i < 6; i++) {
         uint8_t prev_code = prev_kbd_report.keycode[i];
@@ -215,7 +228,19 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
           }
         }
         if (!still_pressed) {
-          uint8_t st = (prev_code < 128) ? stkeys_lookup_hid_gb[prev_code] : 0;
+          bool shift_active =
+              (cur->modifier &
+               (KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT)) !=
+              0;
+          bool alt_active =
+              (cur->modifier &
+               (KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_RIGHTALT)) != 0;
+          bool ctrl_active =
+              (cur->modifier &
+               (KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL)) !=
+              0;
+          uint8_t st = stkeys_translate_hid(layout, prev_code, &shift_active,
+                                            &alt_active, &ctrl_active);
           if (st) key_states[st] = 0;
         }
       }
@@ -224,7 +249,17 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
       for (int i = 0; i < 6; i++) {
         uint8_t cur_code = cur->keycode[i];
         if (!cur_code) continue;
-        uint8_t st = (cur_code < 128) ? stkeys_lookup_hid_gb[cur_code] : 0;
+        bool shift_active =
+            (cur->modifier &
+             (KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT)) != 0;
+        bool alt_active =
+            (cur->modifier &
+             (KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_RIGHTALT)) != 0;
+        bool ctrl_active =
+            (cur->modifier &
+             (KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL)) != 0;
+        uint8_t st = stkeys_translate_hid(layout, cur_code, &shift_active,
+                                          &alt_active, &ctrl_active);
         if (st) key_states[st] = 1;
       }
 
