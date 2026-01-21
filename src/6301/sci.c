@@ -2,14 +2,15 @@
 /* Copyright (c) 1994-1996 Arne Riiber. */
 /* All rights reserved.                 */
 /* >>>                                  */
+#include "sci.h"
+
+#include <serialp.h>
 #include <stdio.h>
 
-#include "defs.h"
 #include "chip.h"
 #include "cpu.h"
+#include "defs.h"
 #include "ireg.h"
-#include "sci.h"
-#include <serialp.h>
 
 /*
 This part of the emu deals with serial I/O between the 6301 and its CPU, in
@@ -35,22 +36,18 @@ $0013    | B | TDR   | Transmit Data Register                         | W0
  * increment number of outstanding rx interrupts
  */
 
-sci_in(s, nbytes)
-    u_char *s;
+sci_in(s, nbytes) u_char *s;
 int nbytes;
 {
   // detect OVR condition, set flag at once (unlike ACIA)
-  if (iram[TRCSR] & RDRF)
-  {
+  if (iram[TRCSR] & RDRF) {
     DPRINTF("6301 OVR SR %X->%X\n", iram[TRCSR], iram[TRCSR] | ORFE);
-    iram[TRCSR] |= ORFE; // hardware sets overrun bit
-  }
-  else
-  {
+    iram[TRCSR] |= ORFE;  // hardware sets overrun bit
+  } else {
     ireg_putb(RDR, *s);
     // DPRINTF("6301 RDR %X\n", *s);
   }
-  iram[TRCSR] |= RDRF; // set RDRF
+  iram[TRCSR] |= RDRF;  // set RDRF
 }
 
 /*
@@ -63,12 +60,11 @@ This register controls the communications.
 -Bit 2 [$4] (RW) : Transmit Interrupt Enable
 -Bit 3 [$8] (RW) : Receive Enable
 -Bit 4 [$10] (RW) : Receive Interrupt Enable
--Bit 5 [$20] (RO) : Transmit Data Register Empty, is set to 1 when a byte has been
-              sent, and is set to 0 when TRCSR is read then TDR is written.
--Bit 6 [$40] (RO) : Overrun or Framing Error, is set to 1 when a byte is received if
-              the previous byte was not read, and is set to 0 when TRCSR then
-              RDR are read.
--Bit 7 [$80] (RO) : Receive Data Register Full, is set to 1 when a byte have been
+-Bit 5 [$20] (RO) : Transmit Data Register Empty, is set to 1 when a byte has
+been sent, and is set to 0 when TRCSR is read then TDR is written. -Bit 6 [$40]
+(RO) : Overrun or Framing Error, is set to 1 when a byte is received if the
+previous byte was not read, and is set to 0 when TRCSR then RDR are read. -Bit 7
+[$80] (RO) : Receive Data Register Full, is set to 1 when a byte have been
               received, and is set to zero when TRSCR then RDR are read.
 
 The read-only bits are set and cleared by the hardware.
@@ -98,18 +94,15 @@ u_int offs;
  *  Sets global interrupt flag if tx interrupt is enabled
  *  so main loop can execute interrupt vector
  */
-trcsr_putb(offs, value)
-    u_int offs;
+trcsr_putb(offs, value) u_int offs;
 u_char value;
 {
-
   //  ASSERT(value&RE); // Receive is never disabled by program
-  if (value & 1)
-    DPRINTF("Set 6301 stand-by\n");
+  if (value & 1) DPRINTF("Set 6301 stand-by\n");
 
   // bits 5-7 of TRCSR can't be set by software
   value &= 0x1F;
-  value |= (iram[0x11] & 0xE0); // add RO bits 5-7
+  value |= (iram[0x11] & 0xE0);  // add RO bits 5-7
   ireg_putb(TRCSR, value);
 }
 
@@ -123,22 +116,20 @@ u_char value;
 u_char rdr_getb(offs)
 u_int offs;
 {
-  if (cpu_isrunning())
-  {
+  if (cpu_isrunning()) {
     /*
      * If recvbuf is not empty, eat a byte from it
      * into RDR
      */
 
-    if (iram[TRCSR] & RDRF)
-    {
+    if (iram[TRCSR] & RDRF) {
       // DPRINTF("6301 (PC %X)\n", reg_getpc());
       iram[TRCSR] &= ~RDRF;
     }
-    if (iram[TRCSR] & ORFE)
-    {
+    if (iram[TRCSR] & ORFE) {
       // DPRINTF("6301 clear OVR\n");
-      iram[TRCSR] &= ~ORFE; // clear overrun bit - we don't check if read TRCSR first
+      iram[TRCSR] &=
+          ~ORFE;  // clear overrun bit - we don't check if read TRCSR first
     }
   }
   return ireg_getb(RDR);
@@ -151,8 +142,7 @@ u_int offs;
  * to signalize main loop to execute sci interrupt vector
  */
 
-tdr_putb(offs, value)
-    u_int offs;
+tdr_putb(offs, value) u_int offs;
 u_char value;
 {
   u_char trcsr;

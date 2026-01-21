@@ -5,9 +5,9 @@
 #include <assert.h>
 #include <stdio.h>
 
-#include "defs.h"
 #include "chip.h"
 #include "cpu.h"
+#include "defs.h"
 #include "ireg.h"
 #include "memory.h"
 #include "optab.h"
@@ -22,8 +22,7 @@
 /*
  *  reset - jump to the reset vector
  */
-reset()
-{
+reset() {
   reg_setpc(mem_getw(RESVECTOR));
   reg_setiflag(1);
 }
@@ -31,9 +30,7 @@ reset()
 /*
  * instr_exec - execute an instruction
  */
-instr_exec()
-{
-
+instr_exec() {
   /*
    * Get opcode from memory,
    * inc program counter to point to first operand,
@@ -44,18 +41,14 @@ instr_exec()
 
 #ifndef M6800
 
-  if (!reg_getiflag())
-  {
+  if (!reg_getiflag()) {
     /*
      * Check for interrupts in priority order
      */
-    if ((ireg_getb(TCSR) & OCF) && (ireg_getb(TCSR) & EOCI))
-    {
+    if ((ireg_getb(TCSR) & OCF) && (ireg_getb(TCSR) & EOCI)) {
       int_addr(OCFVECTOR);
       interrupted = 1;
-    }
-    else if (serial_int())
-    {
+    } else if (serial_int()) {
       int_addr(SCIVECTOR);
       interrupted = 1;
     }
@@ -76,11 +69,9 @@ instr_exec()
   if (interrupted) /* Prepare cycle count for register stacking */
   {
     opptr = &opcodetab[0x3f]; /* SWI */
-  }
-  else
-  {
+  } else {
     int pc = reg_getpc();
-    if (!(pc >= 0x80 && pc < 0xFFFF)) // eg bad snapshot
+    if (!(pc >= 0x80 && pc < 0xFFFF))  // eg bad snapshot
     {
       DPRINTF("pc=%x, 6301 emu is hopelessly crashed!\n", pc);
       crashed = 1;
