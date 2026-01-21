@@ -158,3 +158,7 @@ At some point it’s just the old way: logs, traces, trial and error, and asking
 ## License
 
 This project is licensed under the GNU General Public License v3.0. See the LICENSE file for details.
+
+## Copyright
+
+Except where otherwise noted, this project is copyright of GOODDATA LABS S.L. All rights reserved.
