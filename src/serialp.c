@@ -7,7 +7,7 @@ static volatile uint8_t rx_buffer[256];
 static volatile uint16_t rx_head = 0;
 static volatile uint16_t rx_tail = 0;
 
-static inline void rx_buffer_put(uint8_t data) {
+void rx_buffer_put(uint8_t data) {
   uint16_t next_head = (rx_head + 1) & 0xFF;
   if (next_head != rx_tail) {  // Buffer not full
     rx_buffer[rx_head] = data;
@@ -37,7 +37,7 @@ static void on_uart_irq(void) {
     while (uart_is_readable(UART_DEVICE)) {
       uint8_t ch = uart_getc(UART_DEVICE);
       rx_buffer_put(ch);
-      DPRINTF("ST -> 6301 0x%02X (buffered)\n", ch);
+      // DPRINTF("ST -> 6301 0x%02X (buffered)\n", ch);
     }
   }
 }
@@ -99,7 +99,7 @@ void serialp_close(void) {
 }
 
 void serialp_send(const unsigned char data) {
-  // DPRINTF("6301 -> ST 0x%02X\n", data);
+  DPRINTF("6301 -> ST 0x%02X\n", data);
   // Write the byte and wait until the UART finishes transmitting it.
   // At 7812 baud this is safe and ensures the bit actually leaves the pin.
   uart_putc_raw(UART_DEVICE, data);

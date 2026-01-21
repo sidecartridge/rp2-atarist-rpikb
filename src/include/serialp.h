@@ -23,5 +23,6 @@ void serialp_send(const unsigned char data);
 // RX ring buffer helpers
 uint16_t rx_available(void);
 bool rx_buffer_get(uint8_t *data);
+void rx_buffer_put(uint8_t data);
 
 #endif  // SERIALP_H
