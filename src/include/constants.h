@@ -10,7 +10,7 @@
 // GPIO for the select ATARI or USB keyboard mode
 #define KBD_ATARI_OUT_3V3_GPIO 7
 #define KBD_USB_OUT_3V3_GPIO 8
-#define KBD_TOOGLE_IN_3V3_GPIO 9
+#define KBD_CONFIG_IN_3V3_GPIO 9
 
 // GPIO assignments for serial connection to Atari ST
 #define UART_TX 4
@@ -71,6 +71,7 @@
 
 // NOLINTBEGIN(readability-identifier-naming)
 extern unsigned int __flash_binary_start;
+extern unsigned int _booster_app_flash_start;
 extern unsigned int _storage_flash_start;
 extern unsigned int _config_flash_start;
 extern unsigned int _global_lookup_flash_start;
