@@ -16,6 +16,6 @@
 
 #else
 
-#define CONFIG_BLUEPAD32_LOG_LEVEL 2  // 0 == None
+#define CONFIG_BLUEPAD32_LOG_LEVEL 0  // 0 == None
 
 #endif
