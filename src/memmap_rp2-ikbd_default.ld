@@ -28,6 +28,7 @@ MEMORY
     RAM(rwx) : ORIGIN =  0x20000000, LENGTH = 256k
     SCRATCH_X(rwx) : ORIGIN = 0x20040000, LENGTH = 4k
     SCRATCH_Y(rwx) : ORIGIN = 0x20041000, LENGTH = 4k
+    BOOSTER_APP_FLASH(r) : ORIGIN = 0x10120000, LENGTH = 768K /* Size of the flash for the booster app */ 
 
     CONFIG_FLASH(rwx): ORIGIN = 0x101DE000, LENGTH = 120K /* Config information just below lookup/config/tlv blocks. 30 sectors */
     GLOBAL_LOOKUP_FLASH(rwx): ORIGIN = 0x101FC000, LENGTH = 4K /* The lookup table with apps UUID and the sector number of their config */
@@ -264,6 +265,13 @@ SECTIONS
         KEEP(*(.embedded_end_block*))
         PROVIDE(__flash_binary_end = .);
     } > FLASH
+
+   .booster_app_flash :
+    {
+        _booster_app_flash_start = .;
+        KEEP(*(.booster_app_flash))
+        _booster_app_flash_end = .;
+    } > BOOSTER_APP_FLASH
 
    .config_flash :
     {
