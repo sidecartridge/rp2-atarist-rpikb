@@ -3,9 +3,13 @@
 
 #include "6301.h"
 #include "HD6301V1ST.h"
+#if COMPUTER_TARGET_BT
 #include "btloop.h"
+#endif
 #include "debug.h"
 #include "gconfig.h"
+#include "hardware/clocks.h"
+#include "nativeloop.h"
 #include "pico/btstack_flash_bank.h"
 #include "pico/cyw43_arch.h"
 #include "pico/flash.h"
@@ -13,25 +17,23 @@
 #include "pico/stdlib.h"
 #include "serialp.h"
 #include "settings.h"
+#if COMPUTER_TARGET_USB
 #include "usbloop.h"
-
-#define ROMBASE 256
-#define CYCLES_PER_LOOP 1000
-
-// Retries for queuing USB device descriptor requests
-#ifndef HID_DEV_DESC_MAX_RETRIES
-#define HID_DEV_DESC_MAX_RETRIES 3
-#endif
-
-// Delay between retries (ms)
-#ifndef HID_DEV_DESC_RETRY_DELAY_MS
-#define HID_DEV_DESC_RETRY_DELAY_MS 1000
 #endif
 
 // ~1.28 ms per byte at 7812.5 baud (10 bits)
 #define IKBD_BYTE_US 800
-#define RESET_SEQ_FIRST_BYTE 0x80
-#define RESET_SEQ_SECOND_BYTE 0x01
+#define IKBD_RESET_SEQ_FIRST_BYTE 0x80
+#define IKBD_RESET_SEQ_SECOND_BYTE 0x01
+#define IKBD_CMD_SET_TOD 0x1b
+#define IKBD_TOD_YEAR 0x90
+#define IKBD_TOD_MONTH 0x01
+#define IKBD_TOD_DAY 0x01
+#define IKBD_TOD_HOUR 0x00
+#define IKBD_TOD_MINUTE 0x00
+#define IKBD_TOD_SECOND 0x00
+#define IKBD_ROMBASE 256
+#define IKBD_CYCLES_PER_LOOP 1000
 
 #define KEYBOARD_MODE_NATIVE 0
 #define KEYBOARD_MODE_USB 1
@@ -39,24 +41,45 @@
 #define KEYBOARD_MODE_CONFIG 255
 
 // Timestamp in microseconds since boot when we first saw the reset sequence.
-static uint64_t first_reset_sequence_us = 0;
-static bool waiting_for_reset_sequence = false;
-static bool reset_sequence_recorded = false;
+static uint64_t ikbd_first_reset_sequence_us = 0;
+static bool ikbd_waiting_for_reset_sequence = false;
+static bool ikbd_reset_sequence_recorded = false;
 
-static void launch_config_cb(void) {
-  DPRINTF("launch_config_cb called\n");
-  // Enable both leds to indicate configuration mode
-  gpio_put(KBD_ATARI_OUT_3V3_GPIO, 1);
-  gpio_put(KBD_USB_OUT_3V3_GPIO, 1);
+static inline void jump_to_booster_app() {
+  // Disable the LEDs before leaving
+  gpio_put(KBD_ATARI_OUT_3V3_GPIO, 0);
+  gpio_put(KBD_USB_OUT_3V3_GPIO, 0);
+
+  // Disabling core 1 before leaving
   DPRINTF("Stopping the core 1...\n");
+
+  // Jumping to the FLASH entry of the booster app
   multicore_reset_core1();
+  // Jump to booster code
+  __asm__ __volatile__(
+      "mov r0, %[start]\n"
+      "ldr r1, =%[vtable]\n"
+      "str r0, [r1]\n"
+      "ldmia r0, {r0, r1}\n"
+      "msr msp, r0\n"
+      "bx r1\n"
+      :
+      : [start] "r"((unsigned int)&_booster_app_flash_start + 256),
+        [vtable] "X"(PPB_BASE + M0PLUS_VTOR_OFFSET)
+      :);
+  DPRINTF("You should never reach this point\n");
+}
+
+void launch_config_cb(void) {
+  DPRINTF("launch_config_cb called\n");
+  jump_to_booster_app();
 }
 
 static uint64_t get_first_reset_sequence_cb(void) {
-  if (!reset_sequence_recorded) {
+  if (!ikbd_reset_sequence_recorded) {
     return 0;
   }
-  return first_reset_sequence_us;
+  return ikbd_first_reset_sequence_us;
 }
 
 // static absolute_time_t next_rx_time = {0};
@@ -71,31 +94,28 @@ static inline void handle_rx_from_st() {
     // Drain all currently available bytes into the 6301
     unsigned char data;
     while (rx_buffer_get(&data)) {
-      if (!reset_sequence_recorded) {
-        if (!waiting_for_reset_sequence) {
-          waiting_for_reset_sequence = (data == RESET_SEQ_FIRST_BYTE);
+      if (!ikbd_reset_sequence_recorded) {
+        if (!ikbd_waiting_for_reset_sequence) {
+          ikbd_waiting_for_reset_sequence = (data == IKBD_RESET_SEQ_FIRST_BYTE);
         } else {
-          if (data == RESET_SEQ_SECOND_BYTE) {
-            first_reset_sequence_us = to_us_since_boot(get_absolute_time());
-            reset_sequence_recorded = true;
-            waiting_for_reset_sequence = false;
+          if (data == IKBD_RESET_SEQ_SECOND_BYTE) {
+            ikbd_first_reset_sequence_us =
+                to_us_since_boot(get_absolute_time());
+            ikbd_reset_sequence_recorded = true;
+            ikbd_waiting_for_reset_sequence = false;
             DPRINTF("First RESET sequence seen at %llu us since boot\n",
-                    (unsigned long long)first_reset_sequence_us);
+                    (unsigned long long)ikbd_first_reset_sequence_us);
           } else {
-            waiting_for_reset_sequence = (data == RESET_SEQ_FIRST_BYTE);
+            ikbd_waiting_for_reset_sequence =
+                (data == IKBD_RESET_SEQ_FIRST_BYTE);
           }
         }
       }
-      // DPRINTF("ST -> 6301 %02X\n", data);
-      sleep_us(IKBD_BYTE_US);  // Small delay to avoid overwhelming the 6301
+      DPRINTF("ST -> 6301 %02X\n", data);
+      // sleep_us(IKBD_BYTE_US);  // Small delay to avoid overwhelming the 6301
       hd6301_receive_byte(data);
     }
   }
-}
-
-static inline void select_native_keyboard_source(void) {
-  gpio_put(KBD_ATARI_OUT_3V3_GPIO, 1);
-  gpio_put(KBD_USB_OUT_3V3_GPIO, 0);
 }
 
 static inline void select_rp_keyboard_source(void) {
@@ -136,16 +156,7 @@ static void handle_reset_sequence_cb(void) {
   //         (unsigned long long)reset_sequence);
 
   if (reset_sequence >= (ENTER_CONFIG_MODE_HOLD_TIME_SEC * SEC_TO_US)) {
-    DPRINTF("Entering configuration mode...\n");
-    DPRINTF("Stopping the CYW43 chipset...\n");
-    cyw43_arch_deinit();
-    DPRINTF("CYW43 stopped.\n");
-    DPRINTF("Launching configuration...\n");
-    launch_config_cb();
-    DPRINTF("You should not see this message... Halting.\n");
-    while (1) {
-      tight_loop_contents();
-    }
+    enter_configuration_mode();
   } else if (reset_sequence >= (TOGGLE_IKBD_SOURCE_HOLD_TIME_SEC * SEC_TO_US)) {
     DPRINTF("Toggling IKBD source...\n");
     toogle_ikbd_source_cb();
@@ -158,18 +169,6 @@ static void handle_reset_sequence_cb(void) {
     while (1) {
       tight_loop_contents();
     }
-  }
-}
-
-static void run_native_keyboard_mode(void (*reset_sequence_cb)(void)) {
-  DPRINTF("Entering native keyboard mode (PARAM_MODE=0)\n");
-  select_native_keyboard_source();
-  while (true) {
-    handle_rx_from_st();
-    if (reset_sequence_cb) {
-      reset_sequence_cb();
-    }
-    tight_loop_contents();
   }
 }
 
@@ -213,23 +212,42 @@ static void core1_entry() {
     DPRINTF("Failed to initialise HD6301\n");
     exit(-1);
   }
-  memcpy(pram + ROMBASE, rom_HD6301V1ST_img, rom_HD6301V1ST_img_len);
+  memcpy(pram + IKBD_ROMBASE, rom_HD6301V1ST_img, rom_HD6301V1ST_img_len);
   DPRINTF("Loaded HD6301 ROM\n");
 
   // Reset the HD6301
   DPRINTF("Resetting HD6301...\n");
   hd6301_reset(1);
 
+  // Seed IKBD time-of-day so the emulated clock starts ticking.
+  rx_buffer_put(IKBD_CMD_SET_TOD);  // IKBD command to set TOD
+  rx_buffer_put(IKBD_TOD_YEAR);
+  rx_buffer_put(IKBD_TOD_MONTH);
+  rx_buffer_put(IKBD_TOD_DAY);
+  rx_buffer_put(IKBD_TOD_HOUR);
+  rx_buffer_put(IKBD_TOD_MINUTE);
+  rx_buffer_put(IKBD_TOD_SECOND);
+  DPRINTF("Seeded IKBD time-of-day clock\n");
+
   // Main loop in the HD6301 core
   DPRINTF("Entering HD6301 core loop...\n");
   while (true) {
-    hd6301_tx_empty(1);
-    hd6301_run_clocks(CYCLES_PER_LOOP);
+    static uint64_t last_run_us = 0;
+    uint64_t now_us = time_us_64();
+    if (last_run_us == 0) {
+      last_run_us = now_us;
+    }
+    uint64_t delta_us = now_us - last_run_us;
+    if (delta_us >= IKBD_CYCLES_PER_LOOP) {
+      last_run_us = now_us;
+      hd6301_run_clocks(IKBD_CYCLES_PER_LOOP);
+      hd6301_tx_empty(1);
+    }
   }
 }
 
 int main() {
-  // Set the clock frequency. 20% overclocking
+  // Set the clock frequency.
   set_sys_clock_khz(RP2040_CLOCK_FREQ_KHZ, true);
 
   // Set the voltage
@@ -258,6 +276,8 @@ int main() {
   const char* current_voltage = VOLTAGE_VALUES[RP2040_VOLTAGE];
   DPRINTF("Clock frequency: %i KHz\n", current_clock_frequency_khz);
   DPRINTF("Voltage: %s\n", current_voltage);
+  DPRINTF("PICO_FLASH_SAFE_EXECUTE_PICO_SUPPORT_MULTICORE_LOCKOUT: %i\n",
+          PICO_FLASH_SAFE_EXECUTE_PICO_SUPPORT_MULTICORE_LOCKOUT);
   DPRINTF("PICO_FLASH_SIZE_BYTES: %i\n", PICO_FLASH_SIZE_BYTES);
   DPRINTF("PICO_FLASH_BANK_STORAGE_OFFSET: 0x%X\n",
           (unsigned int)PICO_FLASH_BANK_STORAGE_OFFSET);
@@ -294,7 +314,6 @@ int main() {
           bt_tlv_flash_length);
 
 #endif
-
   // Initialize serial port before the hd6301 core starts
   DPRINTF("Initialising serial port...\n");
   serialp_open();
@@ -328,6 +347,17 @@ int main() {
     }
   }
 
+  // Check first
+  int keyboard_mode = get_keyboard_mode_from_settings();
+  if (keyboard_mode == KEYBOARD_MODE_CONFIG) {
+    DPRINTF("Starting in configuration mode directly...\n");
+    jump_to_booster_app();
+    while (1) {
+      tight_loop_contents();
+    }
+    DPRINTF("You should never reach this point\n");
+  }
+
   // Core 1 runs the HD6301 emulation. BTStack/Bluepad32 flash persistence only
   // worked reliably once Core 1 was enabled with
   // PICO_FLASH_ASSUME_CORE1_SAFE=1; when Core 1 was disabled for development
@@ -348,33 +378,47 @@ int main() {
   gpio_disable_pulls(
       KBD_BD0SEL_3V3_GPIO);  // Ignore the signal. We don't use it.
 
-  // Configure the input pin KBD_TOOGLE_IN_3V3_GPIO
-  gpio_init(KBD_TOOGLE_IN_3V3_GPIO);
-  gpio_set_dir(KBD_TOOGLE_IN_3V3_GPIO, GPIO_IN);
-  gpio_set_pulls(KBD_TOOGLE_IN_3V3_GPIO, false,
+  // Configure the input pin KBD_CONFIG_IN_3V3_GPIO
+  gpio_init(KBD_CONFIG_IN_3V3_GPIO);
+  gpio_set_dir(KBD_CONFIG_IN_3V3_GPIO, GPIO_IN);
+  gpio_set_pulls(KBD_CONFIG_IN_3V3_GPIO, false,
                  true);  // Pull down (false, true)
-  gpio_pull_down(KBD_TOOGLE_IN_3V3_GPIO);
+  gpio_pull_down(KBD_CONFIG_IN_3V3_GPIO);
 
   // Capture initial states to detect edges/changes later
   int prev_reset_state = gpio_get(KBD_RESET_IN_3V3_GPIO);
-  int prev_toggle_state = gpio_get(KBD_TOOGLE_IN_3V3_GPIO);
+  int prev_config_state = gpio_get(KBD_CONFIG_IN_3V3_GPIO);
 
-  int keyboard_mode = get_keyboard_mode_from_settings();
-  keyboard_mode = 2;
   switch (keyboard_mode) {
     case KEYBOARD_MODE_NATIVE:
+#if COMPUTER_TARGET_NATIVE
       run_native_keyboard_mode(handle_reset_sequence_cb);
-      break;
-    case KEYBOARD_MODE_USB:
-      select_rp_keyboard_source();
-      main_usb_loop(prev_reset_state, prev_toggle_state, handle_rx_from_st,
-                    handle_reset_sequence_cb);
+#else
+      DPRINTF("Native mode disabled by COMPUTER_TARGET_NATIVE\n");
+      select_no_source();
+      run_configuration_mode();
+#endif
       break;
     case KEYBOARD_MODE_BT:
+#if COMPUTER_TARGET_BT
       select_rp_keyboard_source();
-      main_bt_bluepad32(prev_reset_state, prev_toggle_state, handle_rx_from_st,
+      main_bt_bluepad32(prev_reset_state, prev_config_state, handle_rx_from_st,
                         handle_reset_sequence_cb);
+#else
+      DPRINTF("BT mode disabled by COMPUTER_TARGET_BT\n");
+      select_no_source();
+      run_configuration_mode();
+#endif
       break;
+    case KEYBOARD_MODE_USB:
+#if COMPUTER_TARGET_USB
+      select_rp_keyboard_source();
+      main_usb_loop(prev_reset_state, prev_config_state, handle_rx_from_st,
+                    handle_reset_sequence_cb);
+      break;
+#else
+      DPRINTF("USB mode disabled by COMPUTER_TARGET_USB\n");
+#endif
     default:
       select_no_source();
       run_configuration_mode();
