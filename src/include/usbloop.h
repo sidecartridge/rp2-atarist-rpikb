@@ -25,7 +25,7 @@
 #define ORIGINAL_MOUSE_LINE_POLL_INTERVAL_US 2000  // 2ms
 #endif
 
-int main_usb_loop(int prev_reset_state, int prev_toggle_state,
+int main_usb_loop(int prev_reset_state, int prev_config_state,
                   void (*handle_rx)(void),
                   void (*reset_sequence_cb)(void));
 

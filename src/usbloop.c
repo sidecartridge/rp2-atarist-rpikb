@@ -1,9 +1,9 @@
 #include "usbloop.h"
 
 // Provided by main.c
-void toogle_ikbd_source_cb(void);
+void launch_config_cb(void);
 
-int main_usb_loop(int prev_reset_state, int prev_toggle_state,
+int main_usb_loop(int prev_reset_state, int prev_config_state,
                   void (*handle_rx)(void),
                   void (*reset_sequence_cb)(void)) {
   // Initialize the board (USB, HID, etc)
@@ -92,6 +92,11 @@ int main_usb_loop(int prev_reset_state, int prev_toggle_state,
   }
   joystick_init_usb(joystick_usb, joystick_usb_port);
 
+  // If configuration pin is already asserted, jump to configuration immediately.
+  if (prev_config_state) {
+    launch_config_cb();
+  }
+
   // Main loop
   DPRINTF("Entering main loop...\n");
   absolute_time_t serial_ten_ms = get_absolute_time();
@@ -144,12 +149,14 @@ int main_usb_loop(int prev_reset_state, int prev_toggle_state,
         prev_reset_state = reset_state;
       }
 
-      int toggle_state = gpio_get(KBD_TOOGLE_IN_3V3_GPIO);
-      if (toggle_state != prev_toggle_state) {
-        DPRINTF("GPIO KBD_TOOGLE_IN_3V3_GPIO changed: %d -> %d\n",
-                prev_toggle_state, toggle_state);
-        prev_toggle_state = toggle_state;
-        toogle_ikbd_source_cb();
+      int config_state = gpio_get(KBD_CONFIG_IN_3V3_GPIO);
+      if (config_state != prev_config_state) {
+        DPRINTF("GPIO KBD_CONFIG_IN_3V3_GPIO changed: %d -> %d\n",
+                prev_config_state, config_state);
+        prev_config_state = config_state;
+        if (config_state) {
+          launch_config_cb();
+        }
       }
       tuh_task();
       // handle_hid_found();
