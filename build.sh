@@ -17,7 +17,9 @@ cd ..
 
 echo "Pinning Bluepad32 submodule version..."
 cd bluepad32
-git checkout tags/4.2.0
+#git checkout tags/4.2.0
+#git checkout DIS-best-effort
+git checkout No-DIS-Handler
 cd ..
 
 # Set the environment variables of the SDKs
