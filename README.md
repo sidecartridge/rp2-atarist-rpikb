@@ -46,10 +46,18 @@ In short:
 ./build.sh <board_type> <build_type> <release_type>
 ```
 
-Example:
+Examples:
 
 ```sh
+# Raspberry Pi Pico W
+./build.sh pico_w release
+
+# Raspberry Pi Pico 2 W
+./build.sh pico2_w release
+
+# Debug build (either board)
 ./build.sh pico_w debug
+./build.sh pico2_w debug
 ```
 
 Manual build (no script):

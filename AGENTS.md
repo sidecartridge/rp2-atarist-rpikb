@@ -1,11 +1,11 @@
 # AGENTS.md
 This repository contains **rp2-atarist-rpikb**, an Atari ST IKBD replacement
-firmware for RP2040 boards (e.g., Pico W). The code lives under `src/` and is
+firmware for RP2040/RP2350 boards (e.g., Pico W, Pico 2, Pico 2 W). The code lives under `src/` and is
 built with the Pico SDK plus a vendored Bluepad32 tree.
 
 ---
 ## Project layout (important)
-- `src/` — RP2040 firmware sources (main loop, HID, Bluetooth, USB, 6301 emu).
+- `src/` — RP2040/RP2350 firmware sources (main loop, HID, Bluetooth, USB, 6301 emu).
   - `src/main.c` — firmware entry point.
   - `src/6301/` — HD6301 emulation and peripherals.
   - `src/include/` — project headers and constants.
@@ -32,9 +32,10 @@ built with the Pico SDK plus a vendored Bluepad32 tree.
 ```
 Example:
 ```sh
-./build.sh pico_w debug
+./build.sh pico2_w debug
 ```
 Notes:
+- Supported `board_type` values include `pico_w`, `pico2`, and `pico2_w`.
 - `build.sh` pins submodule tags and **deletes `build/`** before building.
 - Artifacts are copied into `dist/` as `rp2-ikbd-<board>.uf2`.
 

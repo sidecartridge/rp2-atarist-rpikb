@@ -9,6 +9,11 @@
 #include "debug.h"
 #include "gconfig.h"
 #include "hardware/clocks.h"
+#if defined(PICO_RP2040) && PICO_RP2040
+#include "hardware/regs/m0plus.h"
+#elif defined(PICO_RP2350) && PICO_RP2350
+#include "hardware/regs/m33.h"
+#endif
 #include "nativeloop.h"
 #include "pico/btstack_flash_bank.h"
 #include "pico/cyw43_arch.h"
@@ -45,6 +50,11 @@ static uint64_t ikbd_first_reset_sequence_us = 0;
 static bool ikbd_waiting_for_reset_sequence = false;
 static bool ikbd_reset_sequence_recorded = false;
 
+#ifndef USBDRIVE_APP_OFFSET
+#define USBDRIVE_APP_OFFSET \
+  ((unsigned int)&_booster_app_flash_start - (unsigned int)XIP_BASE)
+#endif
+
 static inline void jump_to_booster_app() {
   // Disable the LEDs before leaving
   gpio_put(KBD_ATARI_OUT_3V3_GPIO, 0);
@@ -55,7 +65,8 @@ static inline void jump_to_booster_app() {
 
   // Jumping to the FLASH entry of the booster app
   multicore_reset_core1();
-  // Jump to booster code
+  // Jump to booster code (RP2040-only sequence).
+#if defined(PICO_RP2040) && PICO_RP2040
   __asm__ __volatile__(
       "mov r0, %[start]\n"
       "ldr r1, =%[vtable]\n"
@@ -68,6 +79,23 @@ static inline void jump_to_booster_app() {
         [vtable] "X"(PPB_BASE + M0PLUS_VTOR_OFFSET)
       :);
   DPRINTF("You should never reach this point\n");
+#elif defined(PICO_RP2350) && PICO_RP2350
+  __asm__ __volatile__(
+      "mov r0, %[start]\n"
+      "ldr r1, =%[vtable]\n"
+      "str r0, [r1]\n"
+      "ldmia r0, {r0, r1}\n"
+      "msr msp, r0\n"
+      "bx r1\n"
+      :
+      : [start] "r"((unsigned int)&_booster_app_flash_start),
+        [vtable] "X"(PPB_BASE + M33_VTOR_OFFSET)
+      :);
+  DPRINTF("You should never reach this point\n");
+#else
+  DPRINTF("Booster jump is only supported on RP2040/RP2350 builds\n");
+  return;
+#endif
 }
 
 void launch_config_cb(void) {
