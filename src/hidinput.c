@@ -30,6 +30,15 @@ static const char* hidinput_get_usb_layout(void) {
   return "us";
 }
 
+static const char* hidinput_get_usb_layout_type(void) {
+  SettingsConfigEntry* entry =
+      settings_find_entry(gconfig_getContext(), PARAM_USB_KB_TYPE);
+  if (entry != NULL && entry->value != NULL) {
+    return entry->value;
+  }
+  return "0";  // auto
+}
+
 // ---- HID interface info ring implementation ----
 #ifndef HID_IF_RING_CAP
 #define HID_IF_RING_CAP 16
@@ -215,6 +224,7 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
       }
 
       const char* layout = hidinput_get_usb_layout();
+      const char* layout_type = hidinput_get_usb_layout_type();
 
       // Clear keys that were in the previous report but not in the current
       for (int i = 0; i < 6; i++) {
@@ -239,8 +249,9 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
               (cur->modifier &
                (KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL)) !=
               0;
-          uint8_t st = stkeys_translate_hid(layout, prev_code, &shift_active,
-                                            &alt_active, &ctrl_active);
+          uint8_t st = stkeys_translate_hid(layout, layout_type, prev_code,
+                                            &shift_active, &alt_active,
+                                            &ctrl_active);
           if (st) key_states[st] = 0;
         }
       }
@@ -258,8 +269,9 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
         bool ctrl_active =
             (cur->modifier &
              (KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL)) != 0;
-        uint8_t st = stkeys_translate_hid(layout, cur_code, &shift_active,
-                                          &alt_active, &ctrl_active);
+        uint8_t st = stkeys_translate_hid(layout, layout_type, cur_code,
+                                          &shift_active, &alt_active,
+                                          &ctrl_active);
         if (st) key_states[st] = 1;
       }
 

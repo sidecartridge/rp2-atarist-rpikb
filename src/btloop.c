@@ -29,6 +29,8 @@ static uint8_t last_keyboard_keys[6];
 
 static bool btstack_paused = false;
 static absolute_time_t s_mouse_last_sample;
+static char s_bt_layout[8] = "us";
+static char s_bt_layout_type[8] = "0";
 
 typedef struct {
   const char *param;
@@ -50,13 +52,37 @@ static void bt_allow_entry_set(size_t index, const bd_addr_t addr) {
   memcpy(bt_allow_entries[index].addr, addr, sizeof(bd_addr_t));
 }
 
-static const char *bt_get_layout(void) {
-  SettingsConfigEntry *entry =
+static void bt_load_layout_settings(void) {
+  SettingsConfigEntry* layout_entry =
       settings_find_entry(gconfig_getContext(), PARAM_BT_KB_LAYOUT);
-  if (entry != NULL && entry->value != NULL) {
-    return entry->value;
+  if (layout_entry != NULL && layout_entry->value != NULL &&
+      layout_entry->value[0] != '\0') {
+    strncpy(s_bt_layout, layout_entry->value, sizeof(s_bt_layout) - 1);
+    s_bt_layout[sizeof(s_bt_layout) - 1] = '\0';
+  } else {
+    strncpy(s_bt_layout, "us", sizeof(s_bt_layout) - 1);
+    s_bt_layout[sizeof(s_bt_layout) - 1] = '\0';
   }
-  return "us";
+
+  SettingsConfigEntry* type_entry =
+      settings_find_entry(gconfig_getContext(), PARAM_BT_KB_TYPE);
+  if (type_entry != NULL && type_entry->value != NULL &&
+      type_entry->value[0] != '\0') {
+    strncpy(s_bt_layout_type, type_entry->value, sizeof(s_bt_layout_type) - 1);
+    s_bt_layout_type[sizeof(s_bt_layout_type) - 1] = '\0';
+  } else {
+    strncpy(s_bt_layout_type, "0", sizeof(s_bt_layout_type) - 1);
+    s_bt_layout_type[sizeof(s_bt_layout_type) - 1] = '\0';
+  }
+
+  DPRINTF("BT keyboard layout cache loaded: layout='%s', type='%s'\n",
+          s_bt_layout, s_bt_layout_type);
+}
+
+static const char *bt_get_layout(void) { return s_bt_layout; }
+
+static const char* bt_get_layout_type(void) {
+  return s_bt_layout_type;
 }
 
 #ifndef MOUSE_LINE_POLL_INTERVAL_US
@@ -317,7 +343,8 @@ static void handle_keyboard_report(const uint8_t *report, uint16_t len) {
   // DPRINTF("Shift active: %s\n", shift_active ? "yes" : "no");
 
   stkeys_apply_keyboard_report_layout(last_keyboard_keys, normalized_keys, 6,
-                                      fixed_modifiers, bt_get_layout());
+                                      fixed_modifiers, bt_get_layout(),
+                                      bt_get_layout_type());
 
   // uint8_t changed_modifiers = fixed_modifiers ^ last_modifiers;
   // if (changed_modifiers != 0) {
@@ -400,6 +427,7 @@ static void btloop_init(int argc, const char **argv) {
   ARG_UNUSED(argc);
   ARG_UNUSED(argv);
   DPRINTF("btloop_init: init()\n");
+  bt_load_layout_settings();
 }
 
 static void btloop_on_init_complete(void) {
