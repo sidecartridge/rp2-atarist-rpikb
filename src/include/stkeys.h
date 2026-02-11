@@ -34,19 +34,21 @@ enum {
 // For reference: USB HID Usage Table page 0x07
 // https://usb.org/sites/default/files/hut1_21.pdf
 
-extern const unsigned char stkeys_lookup_hid_gb[128];
-extern const unsigned char stkeys_lookup_hid_de[128];
-extern const unsigned char stkeys_lookup_hid_fr[128];
-extern const unsigned char stkeys_lookup_hid_it[128];
-extern const unsigned char stkeys_lookup_hid_us[128];
-extern const unsigned char stkeys_lookup_hid_es[128];
+extern const unsigned char stkeys_lookup_hid_gb_iso[128];
+extern const unsigned char stkeys_lookup_hid_de_iso[128];
+extern const unsigned char stkeys_lookup_hid_fr_iso[128];
+extern const unsigned char stkeys_lookup_hid_it_iso[128];
+extern const unsigned char stkeys_lookup_hid_us_ansi[128];
+extern const unsigned char stkeys_lookup_hid_es_iso[128];
 extern unsigned char key_states[128];
 
 void stkeys_apply_keyboard_report_layout(const uint8_t* prev_keys,
                                          const uint8_t* cur_keys,
                                          size_t key_slots, uint8_t modifiers,
-                                         const char* layout);
-uint8_t stkeys_translate_hid(const char* layout, uint8_t hid_code,
+                                         const char* layout,
+                                         const char* layout_type);
+uint8_t stkeys_translate_hid(const char* layout, const char* layout_type,
+                             uint8_t hid_code,
                              bool* shift_active, bool* alt_active,
                              bool* ctrl_active);
 #endif  // STKEYS_H
