@@ -319,9 +319,9 @@ int main() {
                                      (unsigned int)&_config_flash_start;
   unsigned int global_lookup_flash_length = FLASH_SECTOR_SIZE;
   unsigned int global_config_flash_length = FLASH_SECTOR_SIZE;
-  unsigned int bt_tlv_flash_length = 2 * FLASH_SECTOR_SIZE;
+  unsigned int bt_tlv_flash_length = (unsigned int)PICO_FLASH_BANK_TOTAL_SIZE;
   unsigned int bt_tlv_flash_start =
-      XIP_BASE + PICO_FLASH_SIZE_BYTES - bt_tlv_flash_length;
+      (unsigned int)(XIP_BASE + PICO_FLASH_BANK_STORAGE_OFFSET);
 
   assert(PICO_FLASH_BANK_STORAGE_OFFSET == (bt_tlv_flash_start - XIP_BASE));
   assert(PICO_FLASH_BANK_TOTAL_SIZE == bt_tlv_flash_length);
