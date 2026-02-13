@@ -56,7 +56,8 @@ static int checkTypeFormat(SettingsDataType type) {
  */
 static void settingsLoadDefaultEntries(SettingsContext *ctx,
                                        const SettingsConfigEntry *entries,
-                                       uint16_t numEntries) {
+                                       uint16_t numEntries,
+                                       uint16_t maxEntries) {
   // Start with zero count
   ctx->configData.count = 0;
 
@@ -77,6 +78,13 @@ static void settingsLoadDefaultEntries(SettingsContext *ctx,
             "WARNING: SETTINGS_MAX_KEY_LENGTH is %d but key %s "
             "is %zu characters long.\n",
             SETTINGS_MAX_KEY_LENGTH, entries[i].key, strlen(entries[i].key));
+      }
+
+      if (ctx->configData.count >= maxEntries) {
+        DPRINTF(
+            "Error: Too many default entries (%d). Max entries supported: %d.\n",
+            numEntries, maxEntries);
+        break;
       }
 
       // Copy the entry
@@ -105,7 +113,7 @@ static int settingsLoadAllEntries(SettingsContext *ctx,
   uint8_t *currentAddress = (uint8_t *)(ctx->flashSettingsOffset + XIP_BASE);
 
   // First, load default entries
-  settingsLoadDefaultEntries(ctx, entries, numEntries);
+  settingsLoadDefaultEntries(ctx, entries, numEntries, maxEntries);
 
   // The magic value is stored as a string in the first "entry",
   // i.e. at offset = first entry's value field. By design, your code
@@ -218,7 +226,14 @@ int settings_init(SettingsContext *ctx,
   size_t maxEntries = ctx->flashSettingsSize / sizeof(SettingsConfigEntry);
   DPRINTF("Max entries count: %zu\n", maxEntries);
 
-  assert(defaultNumEntries <= maxEntries);
+  size_t defaultEntriesWithMagicCount = (size_t)defaultNumEntries + 1;
+  if (defaultEntriesWithMagicCount > maxEntries) {
+    DPRINTF(
+        "Error: default entries (%zu incl. MAGICVERSION) exceed max entries "
+        "supported by flash buffer (%zu).\n",
+        defaultEntriesWithMagicCount, maxEntries);
+    return -1;
+  }
   DPRINTF("Default entries count: %d\n", defaultNumEntries);
 
   // 3) Prepare the configData structure
@@ -242,6 +257,8 @@ int settings_init(SettingsContext *ctx,
   if (!defaultEntriesWithMagic) {
     DPRINTF(
         "Error: Unable to allocate memory for default entries with magic.\n");
+    free(ctx->configData.entries);
+    ctx->configData.entries = NULL;
     return -1;
   }
 

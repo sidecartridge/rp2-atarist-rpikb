@@ -31,6 +31,13 @@ static bool btstack_paused = false;
 static absolute_time_t s_mouse_last_sample;
 static char s_bt_layout[8] = "us";
 static char s_bt_layout_type[8] = "0";
+static uint8_t s_bt_gamepad_autoshoot_speed = 0;
+static uint32_t s_bt_gamepad_autoshoot_toggle_interval_us = 0;
+static bool s_bt_gamepad_autoshoot_phase = false;
+static bool s_bt_gamepad_autoshoot_active = false;
+static bool s_bt_gamepad_fire_was_pressed = false;
+static absolute_time_t s_bt_gamepad_last_toggle;
+static absolute_time_t s_bt_gamepad_press_start;
 
 typedef struct {
   const char *param;
@@ -77,6 +84,50 @@ static void bt_load_layout_settings(void) {
 
   DPRINTF("BT keyboard layout cache loaded: layout='%s', type='%s'\n",
           s_bt_layout, s_bt_layout_type);
+}
+
+static uint8_t bt_clamp_autoshoot_speed(int value) {
+  if (value <= 0) {
+    return 0;
+  }
+  if (value > 10) {
+    return 10;
+  }
+  return (uint8_t)value;
+}
+
+static uint32_t bt_autoshoot_toggle_interval_us(uint8_t speed) {
+  if (speed == 0) {
+    return 0;
+  }
+
+  // 1 -> 1 shot/second, 10 -> 10 shots/second.
+  // One shot is one full press+release cycle, so toggle at 2x shot rate.
+  const uint32_t toggle_hz = ((uint32_t)speed) * 2u;
+  return 1000000u / toggle_hz;
+}
+
+static void bt_load_gamepad_autoshoot_settings(void) {
+  int autoshoot = 0;
+  SettingsConfigEntry *entry =
+      settings_find_entry(gconfig_getContext(), PARAM_BT_GAMEPADSHOOT);
+  if (entry != NULL && entry->value != NULL && entry->value[0] != '\0') {
+    autoshoot = atoi(entry->value);
+  }
+
+  s_bt_gamepad_autoshoot_speed = bt_clamp_autoshoot_speed(autoshoot);
+  s_bt_gamepad_autoshoot_toggle_interval_us =
+      bt_autoshoot_toggle_interval_us(s_bt_gamepad_autoshoot_speed);
+  s_bt_gamepad_autoshoot_phase = false;
+  s_bt_gamepad_autoshoot_active = false;
+  s_bt_gamepad_fire_was_pressed = false;
+  s_bt_gamepad_last_toggle = get_absolute_time();
+  s_bt_gamepad_press_start = get_absolute_time();
+
+  DPRINTF("BT gamepad autoshoot cache loaded: setting=%d, speed=%u, "
+          "toggle_interval_us=%lu\n",
+          autoshoot, s_bt_gamepad_autoshoot_speed,
+          (unsigned long)s_bt_gamepad_autoshoot_toggle_interval_us);
 }
 
 static const char *bt_get_layout(void) { return s_bt_layout; }
@@ -428,6 +479,7 @@ static void btloop_init(int argc, const char **argv) {
   ARG_UNUSED(argv);
   DPRINTF("btloop_init: init()\n");
   bt_load_layout_settings();
+  bt_load_gamepad_autoshoot_settings();
 }
 
 static void btloop_on_init_complete(void) {
@@ -732,12 +784,56 @@ static void btloop_on_controller_data(uni_hid_device_t *d,
       if (axes[2] < 0) axis_state |= 0x04;
       if (axes[2] > 0) axis_state |= 0x08;
 
-      // Any button (including shoulders/triggers) → fire.
-      uint16_t shoulder_buttons = BUTTON_SHOULDER_L | BUTTON_SHOULDER_R |
-                                  BUTTON_TRIGGER_L | BUTTON_TRIGGER_R;
-      if (gp->buttons || gp->misc_buttons || (gp->buttons & shoulder_buttons)) {
-        fire_state |= 0x02;  // Joystick 0 fire
+      // Fire comes from gamepad action buttons/triggers.
+      // Do not use misc buttons here since some controllers keep them latched,
+      // which can prevent autoshoot from re-arming after release.
+      bool fire_pressed = (gp->buttons != 0) || (gp->brake > 127) ||
+                          (gp->throttle > 127);
+      if (s_bt_gamepad_autoshoot_speed == 0) {
+        if (fire_pressed) {
+          fire_state |= 0x02;  // Joystick 0 fire
+        }
+        s_bt_gamepad_autoshoot_phase = false;
+        s_bt_gamepad_autoshoot_active = false;
+      } else {
+        enum {
+          BT_GAMEPAD_AUTOSHOOT_HOLD_START_US = 2000000,
+        };
+        absolute_time_t now = get_absolute_time();
+        if (fire_pressed) {
+          if (!s_bt_gamepad_fire_was_pressed) {
+            // Normal shot behavior starts immediately.
+            s_bt_gamepad_press_start = now;
+            s_bt_gamepad_autoshoot_active = false;
+            s_bt_gamepad_autoshoot_phase = false;
+            s_bt_gamepad_last_toggle = now;
+            fire_state |= 0x02;  // Joystick 0 fire
+          } else if (!s_bt_gamepad_autoshoot_active) {
+            if (absolute_time_diff_us(s_bt_gamepad_press_start, now) >=
+                BT_GAMEPAD_AUTOSHOOT_HOLD_START_US) {
+              s_bt_gamepad_autoshoot_active = true;
+              s_bt_gamepad_autoshoot_phase = true;
+              s_bt_gamepad_last_toggle = now;
+            }
+            fire_state |= 0x02;  // Keep normal pressed behavior before 2s.
+          } else {
+            if (absolute_time_diff_us(s_bt_gamepad_last_toggle, now) >=
+                (int64_t)s_bt_gamepad_autoshoot_toggle_interval_us) {
+              s_bt_gamepad_autoshoot_phase = !s_bt_gamepad_autoshoot_phase;
+              s_bt_gamepad_last_toggle = now;
+            }
+
+            if (s_bt_gamepad_autoshoot_phase) {
+              fire_state |= 0x02;  // Joystick 0 fire
+            }
+          }
+        } else {
+          s_bt_gamepad_autoshoot_active = false;
+          s_bt_gamepad_autoshoot_phase = false;
+          s_bt_gamepad_press_start = now;
+        }
       }
+      s_bt_gamepad_fire_was_pressed = fire_pressed;
 
       joystick_set_state(fire_state, axis_state);
 
