@@ -60,6 +60,17 @@ else()
     message(FATAL_ERROR "Unknown BOARD_TYPE: ${BOARD_TYPE}")
 endif()
 
+# Board target (0=Unknown, 1=Croissant Revision 2, 2=Souffle Revision 2)
+if(DEFINED ENV{BOARD_TARGET})
+    set(BOARD_TARGET $ENV{BOARD_TARGET})
+else()
+    set(BOARD_TARGET 0)
+endif()
+
+if(NOT BOARD_TARGET MATCHES "^[0-2]$")
+    message(FATAL_ERROR "Invalid BOARD_TARGET='${BOARD_TARGET}'. Supported values: 0 (Unknown), 1 (Croissant Revision 2), 2 (Souffle Revision 2).")
+endif()
+
 # Add / normalize PICO_SDK_PATH
 if(NOT DEFINED ENV{PICO_SDK_PATH})
     set(ENV{PICO_SDK_PATH} "${CMAKE_CURRENT_LIST_DIR}/../pico-sdk")
@@ -87,7 +98,7 @@ set(BTSTACK_ROOT "${PICO_SDK_PATH}/lib/btstack")
 # If you want to use latest BTstack (included in Bluepad32 repo),
 # uncomment the following lines:
 # -- uncomment from here:
-#set(BTSTACK_ROOT ${BLUEPAD32_ROOT}/external/btstack)
+#set(BTSTACK_ROOT ${BLUEPAD32_ROOT}/external/btstack)   
 #set(PICO_BTSTACK_PATH ${BTSTACK_ROOT})
 # Add missing files here. See:
 # https://github.com/bluekitchen/btstack/issues/649
@@ -99,9 +110,21 @@ set(BTSTACK_ROOT "${PICO_SDK_PATH}/lib/btstack")
 # And you need to apply this patch in Pico SDK
 # https://github.com/raspberrypi/pico-sdk/pull/2157
 
+# Resolve debug flag from environment early so it can drive TinyUSB logging.
+set(_DEBUG "$ENV{DEBUG_MODE}")
+if("${_DEBUG}" STREQUAL "")
+    set(_DEBUG 0)
+endif()
+
 # Include build functions from Pico SDK
 include(${PICO_SDK_PATH}/pico_sdk_init.cmake)
 include(${PICO_EXTRAS_PATH}/external/pico_extras_import.cmake)
+
+# TinyUSB RP2040 family.cmake maps LOG -> CFG_TUSB_DEBUG.
+# Use level 2 for Debug builds (level 3 is broken with this TinyUSB snapshot).
+if("${_DEBUG}" STREQUAL "1" AND NOT DEFINED LOG)
+    set(LOG 0)
+endif()
 
 
 # Set name of project (as PROJECT_NAME) and C/C   standards
@@ -125,11 +148,14 @@ add_executable(${PROJECT_NAME}
     6301/6301.c
     usbloop.c
     btloop.c
-    nativeloop.c
     btstack_config.h
     sdkconfig.h
     ${BTSTACK_MISSING_SOURCES}
 )
+
+if("${BOARD_TARGET}" STREQUAL "1")
+    target_sources(${PROJECT_NAME} PRIVATE nativeloop.c)
+endif()
 
 # Create map/bin/hex/uf2 files
 pico_add_extra_outputs(${PROJECT_NAME})
@@ -189,7 +215,6 @@ add_subdirectory(${BLUEPAD32_ROOT}/src/components/bluepad32 libbluepad32)
 set(RELEASE_TYPE $ENV{RELEASE_TYPE})
 set(RELEASE_VERSION $ENV{RELEASE_VERSION})
 set(RELEASE_DATE $ENV{RELEASE_DATE})
-set(_DEBUG $ENV{DEBUG_MODE})
 
 # If the environment variables are not set, use default values
 if(NOT DEFINED RELEASE_VERSION)
@@ -218,10 +243,6 @@ endif()
 if(NOT DEFINED RELEASE_DATE)
         string(TIMESTAMP CURRENT_DATE_TIME "%Y-%m-%d %H:%M:%S")
         set(RELEASE_DATE ${CURRENT_DATE_TIME})
-endif()
-
-if (NOT DEFINED _DEBUG)
-        set(_DEBUG 0)
 endif()
 
 # Debug outputs
@@ -282,8 +303,12 @@ target_compile_definitions(${PROJECT_NAME}  PRIVATE
 # Computer target mask (1=Native, 2=USB, 4=Bluetooth)
 if(DEFINED ENV{COMPUTER_TARGET})
     set(COMPUTER_TARGET $ENV{COMPUTER_TARGET})
+elseif("${BOARD_TARGET}" STREQUAL "1")
+    set(COMPUTER_TARGET 5)  # Croissant: Native + Bluetooth
+elseif("${BOARD_TARGET}" STREQUAL "2")
+    set(COMPUTER_TARGET 6)  # Souffle: USB + Bluetooth
 else()
-    set(COMPUTER_TARGET 5)  # Default: Native + Bluetooth
+    set(COMPUTER_TARGET 5)  # Unknown board target fallback
 endif()
 math(EXPR COMPUTER_TARGET_NATIVE "(${COMPUTER_TARGET} & 1)")
 math(EXPR COMPUTER_TARGET_USB "(${COMPUTER_TARGET} & 2)")
@@ -297,3 +322,8 @@ target_compile_definitions(${PROJECT_NAME} PRIVATE
     COMPUTER_TARGET_BT=${COMPUTER_TARGET_BT}
 )
 message(STATUS "COMPUTER_TARGET: ${COMPUTER_TARGET}")
+
+target_compile_definitions(${PROJECT_NAME} PRIVATE
+    BOARD_TARGET=${BOARD_TARGET}
+)
+message(STATUS "BOARD_TARGET: ${BOARD_TARGET}")

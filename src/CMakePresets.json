@@ -1,0 +1,92 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 26,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Unix Makefiles",
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+      }
+    },
+    {
+      "name": "croissant-debug",
+      "displayName": "Croissant Debug",
+      "description": "BOARD_TARGET=1 (Croissant Revision 2), Debug build",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/../build-croissant-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      },
+      "environment": {
+        "BOARD_TARGET": "1"
+      }
+    },
+    {
+      "name": "souffle-debug",
+      "displayName": "Souffle Debug",
+      "description": "BOARD_TARGET=2 (Souffle Revision 2), Debug build",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/../build-souffle-debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      },
+      "environment": {
+        "BOARD_TARGET": "2"
+      }
+    },
+    {
+      "name": "croissant-release",
+      "displayName": "Croissant Release",
+      "description": "BOARD_TARGET=1 (Croissant Revision 2), Release build",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/../build-croissant-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      },
+      "environment": {
+        "BOARD_TARGET": "1"
+      }
+    },
+    {
+      "name": "souffle-release",
+      "displayName": "Souffle Release",
+      "description": "BOARD_TARGET=2 (Souffle Revision 2), Release build",
+      "inherits": "base",
+      "binaryDir": "${sourceDir}/../build-souffle-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      },
+      "environment": {
+        "BOARD_TARGET": "2"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "croissant-debug",
+      "configurePreset": "croissant-debug",
+      "jobs": 12
+    },
+    {
+      "name": "souffle-debug",
+      "configurePreset": "souffle-debug",
+      "jobs": 12
+    },
+    {
+      "name": "croissant-release",
+      "configurePreset": "croissant-release",
+      "jobs": 12
+    },
+    {
+      "name": "souffle-release",
+      "configurePreset": "souffle-release",
+      "jobs": 12
+    }
+  ]
+}
