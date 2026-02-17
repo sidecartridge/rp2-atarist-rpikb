@@ -3,9 +3,28 @@
 
 #include "hardware/vreg.h"
 
+// Board types supported by this project.
+#define BOARD_TARGET_UNKNOWN 0
+#define BOARD_TARGET_CROISSANT_REV2 1
+#define BOARD_TARGET_SOUFFLE_REV2 2
+
+// Board identity values derived from BOARD_TARGET.
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
+#define BOARD_CODENAME "croissant"
+#define BOARD_DISPLAY_NAME "Croissant"
+#elif defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_SOUFFLE_REV2
+#define BOARD_CODENAME "souffle"
+#define BOARD_DISPLAY_NAME "Souffle"
+#else
+#error \
+    "Invalid BOARD_TARGET. Supported values: 1 (Croissant Revision 2), 2 (Souffle Revision 2)."
+#endif
+
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
 // GPIO for the IKBD interface
 #define KBD_RESET_IN_3V3_GPIO 3
 #define KBD_BD0SEL_3V3_GPIO 6
+#endif
 
 // GPIO for the select ATARI or USB keyboard mode
 #define KBD_ATARI_OUT_3V3_GPIO 7
@@ -17,6 +36,7 @@
 #define UART_RX 5
 #define UART_DEVICE uart1
 
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
 // Joystick 1
 #define JOY1_UP 11
 #define JOY1_DOWN 12
@@ -30,6 +50,27 @@
 #define JOY0_LEFT 18
 #define JOY0_RIGHT 19
 #define JOY0_FIRE 20
+
+#elif defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_SOUFFLE_REV2
+// Joystick 1
+#define JOY1_UP 10
+#define JOY1_DOWN 11
+#define JOY1_LEFT 12
+#define JOY1_RIGHT 13
+#define JOY1_FIRE 14
+#define JOY1_FIRE2 15
+
+// Joystick 0
+#define JOY0_UP 16
+#define JOY0_DOWN 17
+#define JOY0_LEFT 18
+#define JOY0_RIGHT 19
+#define JOY0_FIRE 20
+#define JOY0_FIRE2 21
+#else
+#error \
+    "Invalid BOARD_TARGET. Supported values: 1 (Croissant Revision 2), 2 (Souffle Revision 2)."
+#endif
 
 // Time macros
 #define SEC_TO_MS 1000ULL

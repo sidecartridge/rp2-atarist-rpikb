@@ -1,8 +1,8 @@
 #ifndef HIDINPUT_H
 #define HIDINPUT_H
 
-#include <stdbool.h>
 #include <stdatomic.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "bsp/board.h"

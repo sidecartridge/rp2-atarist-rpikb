@@ -43,21 +43,21 @@ Follow `AGENTS.md` in this repo for prerequisites and supported build flows.
 In short:
 
 ```sh
-./build.sh <board_type> <build_type> <release_type>
+./build.sh <board_type> <build_type> <release_type> <board_flavor>
 ```
 
 Examples:
 
 ```sh
 # Raspberry Pi Pico W
-./build.sh pico_w release
+./build.sh pico_w release final croissant
 
 # Raspberry Pi Pico 2 W
-./build.sh pico2_w release
+./build.sh pico2_w release final souffle
 
 # Debug build (either board)
-./build.sh pico_w debug
-./build.sh pico2_w debug
+./build.sh pico_w debug final croissant
+./build.sh pico2_w debug final souffle
 ```
 
 Manual build (no script):

@@ -446,7 +446,7 @@ void btloop_tick(void) {
   if (absolute_time_diff_us(s_mouse_last_sample, now) >=
       MOUSE_LINE_POLL_INTERVAL_US) {
     s_mouse_last_sample = now;
-    mouse_update();
+    mouse_update_hid();
   }
 }
 
@@ -994,6 +994,8 @@ int main_bt_bluepad32(int prev_reset_state, int prev_config_state,
   joystick_init();
   // Drive joystick emulation from Bluetooth gamepads on port 1.
   joystick_init_usb(true, 1);
+  // BT has its own autoshoot path; keep joystick USB autoshoot disabled here.
+  joystick_set_autoshoot(false, 0);
 
   int mouse_speed = 5;
   SettingsConfigEntry *entry =
@@ -1006,7 +1008,8 @@ int main_bt_bluepad32(int prev_reset_state, int prev_config_state,
   }
 
   // Mouse sensitivity initialization
-  mouse_set_sensitivity(mouse_speed);
+  mouse_set_sensitivity_hid(mouse_speed);
+  mouse_set_active_path(MOUSE_PATH_HID);
 
   // initialize CYW43 driver architecture (will enable BT if/because
   // CYW43_ENABLE_BLUETOOTH == 1)

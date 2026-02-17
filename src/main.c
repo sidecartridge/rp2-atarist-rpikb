@@ -6,6 +6,7 @@
 #if COMPUTER_TARGET_BT
 #include "btloop.h"
 #endif
+#include "constants.h"
 #include "debug.h"
 #include "gconfig.h"
 #include "hardware/clocks.h"
@@ -14,7 +15,9 @@
 #elif defined(PICO_RP2350) && PICO_RP2350
 #include "hardware/regs/m33.h"
 #endif
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
 #include "nativeloop.h"
+#endif
 #include "pico/btstack_flash_bank.h"
 #include "pico/cyw43_arch.h"
 #include "pico/flash.h"
@@ -103,6 +106,14 @@ void launch_config_cb(void) {
   jump_to_booster_app();
 }
 
+static void enter_configuration_mode_cb(void) {
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
+  enter_configuration_mode();
+#else
+  jump_to_booster_app();
+#endif
+}
+
 static uint64_t get_first_reset_sequence_cb(void) {
   if (!ikbd_reset_sequence_recorded) {
     return 0;
@@ -122,6 +133,7 @@ static inline void handle_rx_from_st() {
     // Drain all currently available bytes into the 6301
     unsigned char data;
     while (rx_buffer_get(&data)) {
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
       if (!ikbd_reset_sequence_recorded) {
         if (!ikbd_waiting_for_reset_sequence) {
           ikbd_waiting_for_reset_sequence = (data == IKBD_RESET_SEQ_FIRST_BYTE);
@@ -139,6 +151,7 @@ static inline void handle_rx_from_st() {
           }
         }
       }
+#endif
       DPRINTF("ST -> 6301 %02X\n", data);
       // sleep_us(IKBD_BYTE_US);  // Small delay to avoid overwhelming the 6301
       hd6301_receive_byte(data);
@@ -184,7 +197,7 @@ static void handle_reset_sequence_cb(void) {
   //         (unsigned long long)reset_sequence);
 
   if (reset_sequence >= (ENTER_CONFIG_MODE_HOLD_TIME_SEC * SEC_TO_US)) {
-    enter_configuration_mode();
+    enter_configuration_mode_cb();
   } else if (reset_sequence >= (TOGGLE_IKBD_SOURCE_HOLD_TIME_SEC * SEC_TO_US)) {
     DPRINTF("Toggling IKBD source...\n");
     toogle_ikbd_source_cb();
@@ -394,6 +407,7 @@ int main() {
   DPRINTF("Starting HD6301 core...\n");
   multicore_launch_core1(core1_entry);
 
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
   // Configure the input pins KBD RESET and BD0SEL0000
   gpio_init(KBD_RESET_IN_3V3_GPIO);
   gpio_set_dir(KBD_RESET_IN_3V3_GPIO, GPIO_IN);
@@ -405,6 +419,7 @@ int main() {
   gpio_set_dir(KBD_BD0SEL_3V3_GPIO, GPIO_IN);
   gpio_disable_pulls(
       KBD_BD0SEL_3V3_GPIO);  // Ignore the signal. We don't use it.
+#endif
 
   // Configure the input pin KBD_CONFIG_IN_3V3_GPIO
   gpio_init(KBD_CONFIG_IN_3V3_GPIO);
@@ -414,13 +429,27 @@ int main() {
   gpio_pull_down(KBD_CONFIG_IN_3V3_GPIO);
 
   // Capture initial states to detect edges/changes later
-  int prev_reset_state = gpio_get(KBD_RESET_IN_3V3_GPIO);
+  int prev_reset_state = 0;
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
+  prev_reset_state = gpio_get(KBD_RESET_IN_3V3_GPIO);
+#endif
   int prev_config_state = gpio_get(KBD_CONFIG_IN_3V3_GPIO);
+
+  void (*reset_sequence_cb_ptr)(void) = NULL;
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
+  reset_sequence_cb_ptr = handle_reset_sequence_cb;
+#endif
 
   switch (keyboard_mode) {
     case KEYBOARD_MODE_NATIVE:
 #if COMPUTER_TARGET_NATIVE
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
       run_native_keyboard_mode(handle_reset_sequence_cb);
+#else
+      DPRINTF("Native mode unsupported on BOARD_TARGET=%d\n", BOARD_TARGET);
+      select_no_source();
+      run_configuration_mode();
+#endif
 #else
       DPRINTF("Native mode disabled by COMPUTER_TARGET_NATIVE\n");
       select_no_source();
@@ -431,7 +460,7 @@ int main() {
 #if COMPUTER_TARGET_BT
       select_rp_keyboard_source();
       main_bt_bluepad32(prev_reset_state, prev_config_state, handle_rx_from_st,
-                        handle_reset_sequence_cb);
+                        reset_sequence_cb_ptr);
 #else
       DPRINTF("BT mode disabled by COMPUTER_TARGET_BT\n");
       select_no_source();
@@ -442,7 +471,7 @@ int main() {
 #if COMPUTER_TARGET_USB
       select_rp_keyboard_source();
       main_usb_loop(prev_reset_state, prev_config_state, handle_rx_from_st,
-                    handle_reset_sequence_cb);
+                    reset_sequence_cb_ptr);
       break;
 #else
       DPRINTF("USB mode disabled by COMPUTER_TARGET_USB\n");

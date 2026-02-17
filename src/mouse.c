@@ -7,169 +7,250 @@
 #include "debug.h"
 #include "pico/time.h"
 
-// --- Constants (from the working version) ---
 #define MOUSE_MASK 0x33333333u
-// scaler: larger |speed| -> shorter period.
-// Tuned so that small but real movements (after gain) still produce
-// visible motion without being clamped out.
-#define MAX_SPEED 150000.0
-#define MIN_SPEED 650  // µs: fastest allowed edge interval
+#define MOUSE_GAIN_LEVELS 10
 
-// --- Tuning ---
-// After gain, small deltas within [-DEADZONE_SPEED, +DEADZONE_SPEED]
-// are treated as zero to avoid jitter at low speed.
-#define DEADZONE_SPEED 1
-// Allow slow movement down to ~100 ms between edges before treating as stop.
-#define STOP_IF_PERIOD_US 100000  // if |period| > 100 ms, treat as stop
-// If no HID input for a short time, force stop to prevent residual drift.
-#define IDLE_TIMEOUT_US 80000  // if no HID for 80 ms, stop
+typedef struct {
+  double max_speed;
+  int min_speed_us;
+  int deadzone_speed;
+  int stop_if_period_us;
+  int idle_timeout_us;
+  float gain[MOUSE_GAIN_LEVELS];
+} mouse_profile_t;
 
-static absolute_time_t last_input_us;
+typedef struct {
+  absolute_time_t last_input_us;
+  volatile int x_period_us;  // signed: sign = direction
+  volatile int y_period_us;  // signed: sign = direction
+  absolute_time_t last_x_us;
+  absolute_time_t last_y_us;
+  uint32_t x_reg;
+  uint32_t y_reg;
+  int mouse_sensitivity;  // 0..9
+} mouse_runtime_t;
 
-// --- Internal state ---
-static volatile int x_period_us = 0;  // signed: sign = direction
-static volatile int y_period_us = 0;
+static const mouse_profile_t s_mouse_profiles[MOUSE_PATH_COUNT] = {
+    [MOUSE_PATH_HID] =
+        {
+            .max_speed = 150000.0,
+            .min_speed_us = 650,
+            .deadzone_speed = 1,
+            .stop_if_period_us = 100000,
+            .idle_timeout_us = 80000,
+            .gain = {1.0f, 1.3f, 1.6f, 1.9f, 2.2f, 2.5f, 3.0f, 3.2f, 3.6f,
+                     4.0f},
+        },
+    [MOUSE_PATH_NATIVE] =
+        {
+            .max_speed = 120000.0,
+            .min_speed_us = 500,
+            .deadzone_speed = 0,
+            .stop_if_period_us = 120000,
+            .idle_timeout_us = 120000,
+            .gain = {1.0f, 1.2f, 1.4f, 1.7f, 2.0f, 2.3f, 2.6f, 2.9f, 3.2f,
+                     3.5f},
+        },
+};
 
-static absolute_time_t last_x_us;
-static absolute_time_t last_y_us;
+static mouse_runtime_t s_mouse_runtime[MOUSE_PATH_COUNT];
+static volatile mouse_path_t s_active_path = MOUSE_PATH_HID;
 
-static uint32_t x_reg;
-static uint32_t y_reg;
-
-static int mouse_sensitivity = 9;  // 0..9
-
-void mouse_set_sensitivity(int level) {
-  if (level < 0)
-    mouse_sensitivity = 0;
-  else if (level > 9)
-    mouse_sensitivity = 9;
-  else
-    mouse_sensitivity = level;
+static inline bool mouse_path_valid(mouse_path_t path) {
+  return (path == MOUSE_PATH_HID || path == MOUSE_PATH_NATIVE);
 }
 
-int mouse_get_sensitivity() { return mouse_sensitivity; }
+static inline int clamp_sensitivity(int level) {
+  if (level < 0) return 0;
+  if (level > 9) return 9;
+  return level;
+}
 
-// --- Helpers: 32-bit rotates ---
 static inline uint32_t rotl32(uint32_t v, unsigned s) {
   s &= 31;
   return (v << s) | (v >> (32 - s));
 }
+
 static inline uint32_t rotr32(uint32_t v, unsigned s) {
   s &= 31;
   return (v >> s) | (v << (32 - s));
 }
 
-// --- Period mapping (same logic as set_speed_internal) ---
-static inline void map_speed_to_period(int speed, volatile int* period_us) {
-  if (speed == 0) {
-    *period_us = 0;
-    return;
-  }
-
-  double mag = MAX_SPEED / fabs((double)speed);  // magnitude only
-  int p = (int)mag;
-  if (p < MIN_SPEED) p = MIN_SPEED;  // clamp fastest rate
-
-  *period_us = (speed > 0) ? +p : -p;  // sign comes from speed
+static inline int apply_gain(const mouse_profile_t* profile, int v, int level) {
+  return (int)(v * profile->gain[level]);
 }
 
-// --- Public API ---
-void mouse_init(void) {
-  x_reg = y_reg = MOUSE_MASK;
-
-  // Randomize starting phase (matches the working code’s idea)
-  x_reg = rotl32(x_reg, rand() & 15);
-  y_reg = rotl32(y_reg, rand() & 15);
-
-  last_x_us = last_y_us = last_input_us = get_absolute_time();
-}
-
-// ganancia lineal por sensibilidad 0..9
-static inline int apply_gain(int v, int level) {
-  // 1.0, 1.3, 1.6, ..., 4.0
-  static const float g[10] = {1.0f, 1.3f, 1.6f, 1.9f, 2.2f,
-                              2.5f, 3.0f, 3.2f, 3.6f, 4.0f};
-  return (int)(v * g[level]);
-}
-
-static inline int with_deadzone(int v) {
-  if (v >= -DEADZONE_SPEED && v <= DEADZONE_SPEED) return 0;
+static inline int with_deadzone(const mouse_profile_t* profile, int v) {
+  if (v >= -profile->deadzone_speed && v <= profile->deadzone_speed) return 0;
   return v;
 }
 
-static inline void map_speed_to_period_axis(int speed, volatile int* period_us,
-                                            int min_speed_us, float freq_mul) {
+static inline void map_speed_to_period_axis(const mouse_profile_t* profile,
+                                            int speed,
+                                            volatile int* period_us) {
   if (speed == 0) {
     *period_us = 0;
     return;
   }
 
-  double mag = MAX_SPEED / (speed >= 0 ? (double)speed : -(double)speed);
+  double mag = profile->max_speed / fabs((double)speed);
   int p = (int)mag;
-  if (p < min_speed_us) p = min_speed_us;
-
-  // Apply frequency multiplier (e.g., 2.0 for 2× faster)
-  p = (int)(p / (freq_mul > 0 ? freq_mul : 1.0f));
+  if (p < profile->min_speed_us) p = profile->min_speed_us;
   if (p < 1) p = 1;
 
   *period_us = (speed > 0) ? +p : -p;
 }
 
-void mouse_set_speed(int x, int y) {
-  x = apply_gain(x, mouse_sensitivity);
-  y = apply_gain(y, mouse_sensitivity);
-
-  x = with_deadzone(x);
-  y = with_deadzone(y);
-
-  // X normal, Y is 2× faster
-  map_speed_to_period_axis(x, &x_period_us, MIN_SPEED, 1.0f);
-  map_speed_to_period_axis(y, &y_period_us, MIN_SPEED, 1.0f);
-
-  if (abs(x_period_us) > STOP_IF_PERIOD_US) x_period_us = 0;
-  if (abs(y_period_us) > STOP_IF_PERIOD_US) y_period_us = 0;
-
-  last_input_us = get_absolute_time();
-}
-
-// Call this periodically (your main loop or timer). It advances the quadrature
-// when the per-axis period elapses. (This is your old AtariSTMouse::update()).
-void mouse_update(void) {
+static void mouse_init_runtime(mouse_path_t path) {
+  mouse_runtime_t* rt = &s_mouse_runtime[path];
   absolute_time_t now = get_absolute_time();
 
-  // If no fresh HID in a while, force stop (prevents residual creep)
-  if (absolute_time_diff_us(last_input_us, now) > IDLE_TIMEOUT_US) {
-    x_period_us = 0;
-    y_period_us = 0;
+  rt->x_reg = MOUSE_MASK;
+  rt->y_reg = MOUSE_MASK;
+  rt->x_reg = rotl32(rt->x_reg, (unsigned)(rand() & 15));
+  rt->y_reg = rotl32(rt->y_reg, (unsigned)(rand() & 15));
+
+  rt->x_period_us = 0;
+  rt->y_period_us = 0;
+  rt->last_x_us = now;
+  rt->last_y_us = now;
+  rt->last_input_us = now;
+  rt->mouse_sensitivity = 9;
+}
+
+static void mouse_set_sensitivity_for_path(mouse_path_t path, int level) {
+  if (!mouse_path_valid(path)) return;
+  s_mouse_runtime[path].mouse_sensitivity = clamp_sensitivity(level);
+}
+
+static int mouse_get_sensitivity_for_path(mouse_path_t path) {
+  if (!mouse_path_valid(path)) return 0;
+  return s_mouse_runtime[path].mouse_sensitivity;
+}
+
+static void mouse_set_speed_for_path(mouse_path_t path, int x_in, int y_in) {
+  if (!mouse_path_valid(path)) return;
+
+  const mouse_profile_t* profile = &s_mouse_profiles[path];
+  mouse_runtime_t* rt = &s_mouse_runtime[path];
+
+  int x = apply_gain(profile, x_in, rt->mouse_sensitivity);
+  int y = apply_gain(profile, y_in, rt->mouse_sensitivity);
+
+  x = with_deadzone(profile, x);
+  y = with_deadzone(profile, y);
+
+  map_speed_to_period_axis(profile, x, &rt->x_period_us);
+  map_speed_to_period_axis(profile, y, &rt->y_period_us);
+
+  if (abs(rt->x_period_us) > profile->stop_if_period_us) rt->x_period_us = 0;
+  if (abs(rt->y_period_us) > profile->stop_if_period_us) rt->y_period_us = 0;
+
+  rt->last_input_us = get_absolute_time();
+}
+
+static void mouse_update_for_path(mouse_path_t path) {
+  if (!mouse_path_valid(path)) return;
+
+  const mouse_profile_t* profile = &s_mouse_profiles[path];
+  mouse_runtime_t* rt = &s_mouse_runtime[path];
+  absolute_time_t now = get_absolute_time();
+
+  // If no fresh input in a while, force stop (prevents residual drift).
+  if (absolute_time_diff_us(rt->last_input_us, now) >
+      profile->idle_timeout_us) {
+    rt->x_period_us = 0;
+    rt->y_period_us = 0;
   }
 
-  if (x_period_us != 0) {
-    int step = (x_period_us > 0) ? x_period_us : -x_period_us;
-    absolute_time_t due = delayed_by_us(last_x_us, step);
+  if (rt->x_period_us != 0) {
+    int step = (rt->x_period_us > 0) ? rt->x_period_us : -rt->x_period_us;
+    absolute_time_t due = delayed_by_us(rt->last_x_us, step);
     if (time_reached(due)) {
-      last_x_us = now;
-      x_reg = (x_period_us > 0) ? rotr32(x_reg, 1) : rotl32(x_reg, 1);
+      rt->last_x_us = now;
+      rt->x_reg =
+          (rt->x_period_us > 0) ? rotr32(rt->x_reg, 1) : rotl32(rt->x_reg, 1);
     }
   } else {
-    // If stopped, keep the schedule anchored to "now"
-    last_x_us = now;
+    rt->last_x_us = now;
   }
 
-  if (y_period_us != 0) {
-    int step = (y_period_us > 0) ? y_period_us : -y_period_us;
-    absolute_time_t due = delayed_by_us(last_y_us, step);
+  if (rt->y_period_us != 0) {
+    int step = (rt->y_period_us > 0) ? rt->y_period_us : -rt->y_period_us;
+    absolute_time_t due = delayed_by_us(rt->last_y_us, step);
     if (time_reached(due)) {
-      last_y_us = now;
-      y_reg = (y_period_us > 0) ? rotr32(y_reg, 1) : rotl32(y_reg, 1);
+      rt->last_y_us = now;
+      rt->y_reg =
+          (rt->y_period_us > 0) ? rotr32(rt->y_reg, 1) : rotl32(rt->y_reg, 1);
     }
   } else {
-    last_y_us = now;
+    rt->last_y_us = now;
   }
 }
 
-// IKBD 6301 emulator calls this to read the current quadrature registers.
-// dr4_getb() will mask with &3 and place X on bits[1:0], Y on bits[3:2].
+void mouse_init(void) {
+  mouse_init_runtime(MOUSE_PATH_HID);
+  mouse_init_runtime(MOUSE_PATH_NATIVE);
+}
+
+void mouse_init_path(mouse_path_t path) {
+  if (!mouse_path_valid(path)) return;
+  mouse_init_runtime(path);
+}
+
+void mouse_set_active_path(mouse_path_t path) {
+  if (!mouse_path_valid(path)) return;
+  s_active_path = path;
+}
+
+mouse_path_t mouse_get_active_path(void) { return s_active_path; }
+
+void mouse_set_sensitivity(int level) {
+  mouse_set_sensitivity_for_path(s_active_path, level);
+}
+
+int mouse_get_sensitivity(void) {
+  return mouse_get_sensitivity_for_path(s_active_path);
+}
+
+void mouse_set_sensitivity_hid(int level) {
+  mouse_set_sensitivity_for_path(MOUSE_PATH_HID, level);
+}
+
+void mouse_set_sensitivity_native(int level) {
+  mouse_set_sensitivity_for_path(MOUSE_PATH_NATIVE, level);
+}
+
+int mouse_get_sensitivity_hid(void) {
+  return mouse_get_sensitivity_for_path(MOUSE_PATH_HID);
+}
+
+int mouse_get_sensitivity_native(void) {
+  return mouse_get_sensitivity_for_path(MOUSE_PATH_NATIVE);
+}
+
+void mouse_set_speed(int x, int y) {
+  mouse_set_speed_for_path(s_active_path, x, y);
+}
+
+void mouse_set_speed_hid(int x, int y) {
+  mouse_set_speed_for_path(MOUSE_PATH_HID, x, y);
+}
+
+void mouse_set_speed_native(int x, int y) {
+  mouse_set_speed_for_path(MOUSE_PATH_NATIVE, x, y);
+}
+
+void mouse_update(void) { mouse_update_for_path(s_active_path); }
+
+void mouse_update_hid(void) { mouse_update_for_path(MOUSE_PATH_HID); }
+
+void mouse_update_native(void) { mouse_update_for_path(MOUSE_PATH_NATIVE); }
+
 void mouse_tick(int64_t /*cpu_cycles*/, int* x_counter, int* y_counter) {
-  *x_counter = (int)x_reg;
-  *y_counter = (int)y_reg;
+  mouse_path_t active_path = s_active_path;
+  if (!mouse_path_valid(active_path)) active_path = MOUSE_PATH_HID;
+  mouse_runtime_t* rt = &s_mouse_runtime[active_path];
+  *x_counter = (int)rt->x_reg;
+  *y_counter = (int)rt->y_reg;
 }
