@@ -22,11 +22,10 @@
 
 // Original mouse line sampling interval (microseconds)
 #ifndef ORIGINAL_MOUSE_LINE_POLL_INTERVAL_US
-#define ORIGINAL_MOUSE_LINE_POLL_INTERVAL_US 2000  // 2ms
+#define ORIGINAL_MOUSE_LINE_POLL_INTERVAL_US 4000  // 4ms
 #endif
 
 int main_usb_loop(int prev_reset_state, int prev_config_state,
-                  void (*handle_rx)(void),
-                  void (*reset_sequence_cb)(void));
+                  void (*handle_rx)(void), void (*reset_sequence_cb)(void));
 
 #endif  // USBLOOP_H
