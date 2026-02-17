@@ -17,9 +17,9 @@ _Atomic int16_t pend_dy = 0;
                  ? ~((1 << item->Attributes.BitSize) - 1)          \
                  : 0))
 
-static int mouse_state = 0;
-static uint8_t mouse_buttons_hid = 0;
-static uint8_t joystick_fire_mask = 0;
+static _Atomic uint8_t mouse_buttons_hid = 0;
+static _Atomic uint8_t joystick_fire_mask = 0;
+static bool s_hid_dev_has_boot_keyboard[CFG_TUH_DEVICE_MAX + 1];
 
 static const char* hidinput_get_usb_layout(void) {
   SettingsConfigEntry* entry =
@@ -37,6 +37,19 @@ static const char* hidinput_get_usb_layout_type(void) {
     return entry->value;
   }
   return "0";  // auto
+}
+
+static const char* hidinput_usb_speed_str(tusb_speed_t speed) {
+  switch (speed) {
+    case TUSB_SPEED_LOW:
+      return "low";
+    case TUSB_SPEED_FULL:
+      return "full";
+    case TUSB_SPEED_HIGH:
+      return "high";
+    default:
+      return "unknown";
+  }
 }
 
 // ---- HID interface info ring implementation ----
@@ -58,6 +71,7 @@ void hidinput_if_ring_init(void) {
   s_hid_if_head = 0;
   s_hid_if_tail = 0;
   s_hid_if_count = 0;
+  memset(s_hid_dev_has_boot_keyboard, 0, sizeof(s_hid_dev_has_boot_keyboard));
 }
 
 bool hidinput_if_ring_push(uint8_t dev_addr, uint8_t instance) {
@@ -172,37 +186,61 @@ void hidinput_device_descriptor_complete_cb(tuh_xfer_t* xfer) {
 
 void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance,
                       uint8_t const* report_desc, uint16_t desc_len) {
-  DPRINTF("HID device mounted: addr=%d (instance=%d)\r\n", dev_addr, instance);
+  DPRINTF("HID device mounted: addr=%u (inst=%u)\r\n", dev_addr, instance);
 
-  // Interface protocol (hid_interface_protocol_enum_t)
-  const char* protocol_str[] = {"None", "Keyboard", "Mouse"};
+  // Basic bounds/sanity
+  if (dev_addr == 0 || dev_addr > CFG_TUH_DEVICE_MAX) {
+    DPRINTF("HID mount: invalid dev_addr=%u\r\n", dev_addr);
+    return;
+  }
+
   uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
+  tusb_speed_t const dev_speed = tuh_speed_get(dev_addr);
 
-  DPRINTF("HID Interface Protocol = %s\r\n", protocol_str[itf_protocol]);
+  // Protect against unexpected enum values
+  const char* protocol_str = "Unknown";
+  if (itf_protocol <= HID_ITF_PROTOCOL_MOUSE) {
+    static const char* protocol_map[] = {"None", "Keyboard", "Mouse"};
+    protocol_str = protocol_map[itf_protocol];
+  }
+
+  DPRINTF("HID Interface Protocol = %s\r\n", protocol_str);
+  DPRINTF("HID USB link speed = %s (%d)\r\n", hidinput_usb_speed_str(dev_speed),
+          (int)dev_speed);
+
+  // Record that this device has a boot keyboard interface
+  if (itf_protocol == HID_ITF_PROTOCOL_KEYBOARD) {
+    s_hid_dev_has_boot_keyboard[dev_addr] = true;
+  }
+
+  // Workaround: keyboards often expose a secondary HID interface (03/00/00).
+  // If we've already seen a boot keyboard on this device, skip polling the
+  // extra one. This avoids known hub/LS timing issues.
+  if (itf_protocol == HID_ITF_PROTOCOL_NONE &&
+      s_hid_dev_has_boot_keyboard[dev_addr]) {
+    DPRINTF("Skipping secondary HID interface (addr=%u, inst=%u)\r\n", dev_addr,
+            instance);
+    return;
+  }
+
+  (void)report_desc;
+  (void)desc_len;
 
   // Store this interface id (addr+instance) into the ring for external
   // consumers
   (void)hidinput_if_ring_push(dev_addr, instance);
+
   // Start receiving reports
   if (!tuh_hid_receive_report(dev_addr, instance)) {
-    DPRINTF("Failed to start receiving reports\r\n");
+    DPRINTF("Failed to start receiving reports (addr=%u, inst=%u)\r\n",
+            dev_addr, instance);
   }
-
-  // Get device usage info using the correct function
-  // uint8_t const* report_descriptor = report_desc;
-  // uint16_t report_length = desc_len;
-  // static uint8_t dev_desc_buf[18] __attribute__((aligned(4)));
-  // bool ok =
-  //     tuh_descriptor_get_device(dev_addr, dev_desc_buf, sizeof(dev_desc_buf),
-  //                               device_descriptor_complete_cb,
-  //                               /* user_data */ 0);
-  // if (!ok) {
-  //   DPRINTF("Failed to queue device descriptor request for device %u\n",
-  //           dev_addr);
-  // }
 }
 
 void tuh_hid_unmount_cb(uint8_t dev_addr, uint8_t instance) {
+  if (dev_addr > 0 && dev_addr <= CFG_TUH_DEVICE_MAX) {
+    if (instance == 0) s_hid_dev_has_boot_keyboard[dev_addr] = false;
+  }
   DPRINTF("A device (address %d) is unmounted. Index: %d\r\n", dev_addr,
           instance);
 }
@@ -239,19 +277,16 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
         }
         if (!still_pressed) {
           bool shift_active =
-              (cur->modifier &
-               (KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT)) !=
-              0;
-          bool alt_active =
-              (cur->modifier &
-               (KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_RIGHTALT)) != 0;
+              (cur->modifier & (KEYBOARD_MODIFIER_LEFTSHIFT |
+                                KEYBOARD_MODIFIER_RIGHTSHIFT)) != 0;
+          bool alt_active = (cur->modifier & (KEYBOARD_MODIFIER_LEFTALT |
+                                              KEYBOARD_MODIFIER_RIGHTALT)) != 0;
           bool ctrl_active =
               (cur->modifier &
-               (KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL)) !=
-              0;
-          uint8_t st = stkeys_translate_hid(layout, layout_type, prev_code,
-                                            &shift_active, &alt_active,
-                                            &ctrl_active);
+               (KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL)) != 0;
+          uint8_t st =
+              stkeys_translate_hid(layout, layout_type, prev_code,
+                                   &shift_active, &alt_active, &ctrl_active);
           if (st) key_states[st] = 0;
         }
       }
@@ -263,15 +298,13 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
         bool shift_active =
             (cur->modifier &
              (KEYBOARD_MODIFIER_LEFTSHIFT | KEYBOARD_MODIFIER_RIGHTSHIFT)) != 0;
-        bool alt_active =
-            (cur->modifier &
-             (KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_RIGHTALT)) != 0;
-        bool ctrl_active =
-            (cur->modifier &
-             (KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL)) != 0;
-        uint8_t st = stkeys_translate_hid(layout, layout_type, cur_code,
-                                          &shift_active, &alt_active,
-                                          &ctrl_active);
+        bool alt_active = (cur->modifier & (KEYBOARD_MODIFIER_LEFTALT |
+                                            KEYBOARD_MODIFIER_RIGHTALT)) != 0;
+        bool ctrl_active = (cur->modifier & (KEYBOARD_MODIFIER_LEFTCTRL |
+                                             KEYBOARD_MODIFIER_RIGHTCTRL)) != 0;
+        uint8_t st =
+            stkeys_translate_hid(layout, layout_type, cur_code, &shift_active,
+                                 &alt_active, &ctrl_active);
         if (st) key_states[st] = 1;
       }
 
@@ -299,10 +332,15 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
       break;
     }
     case HID_ITF_PROTOCOL_MOUSE: {
-      hid_mouse_report_t const* cur = (hid_mouse_report_t const*)report;
-      bool left = (cur->buttons & MOUSE_BUTTON_LEFT) != 0;
-      bool right = (cur->buttons & MOUSE_BUTTON_RIGHT) != 0;
-      hidinput_update_mouse((int16_t)cur->x, (int16_t)cur->y, left, right);
+      if (len < 1) {
+        break;
+      }
+      uint8_t buttons = report[0];
+      int8_t dx = (len >= 2) ? (int8_t)report[1] : 0;
+      int8_t dy = (len >= 3) ? (int8_t)report[2] : 0;
+      bool left = (buttons & MOUSE_BUTTON_LEFT) != 0;
+      bool right = (buttons & MOUSE_BUTTON_RIGHT) != 0;
+      hidinput_update_mouse((int16_t)dx, (int16_t)dy, left, right);
       break;
     }
 
@@ -377,8 +415,19 @@ unsigned char st_keydown(const unsigned char code) {
 }
 
 int st_mouse_buttons() {
-  int other_bits = mouse_state & ~0x03;
-  return other_bits | mouse_buttons_hid | joystick_fire_mask;
+  uint8_t mouse_btns =
+      atomic_load_explicit(&mouse_buttons_hid, memory_order_relaxed);
+
+  // Read current native joystick/mouse button bits directly so DR2 button
+  // reads don't depend on st_joystick() having run beforehand.
+  uint8_t fire_state = 0;
+  uint8_t axis_state = 0;
+  joystick_get_state(&fire_state, &axis_state);
+  (void)axis_state;
+  uint8_t joy_btns = fire_state & 0x03;
+  atomic_store_explicit(&joystick_fire_mask, joy_btns, memory_order_relaxed);
+
+  return (int)(mouse_btns | joy_btns);
 }
 
 unsigned char st_joystick() {
@@ -386,16 +435,7 @@ unsigned char st_joystick() {
   uint8_t axis_state;
   joystick_get_state(&fire_state, &axis_state);
   uint8_t fire_bits = fire_state & 0x03;
-  joystick_fire_mask |= fire_bits;
-  if ((fire_bits & 0x01) == 0) {
-    joystick_fire_mask &= (uint8_t)~0x01;
-  }
-  if ((fire_bits & 0x02) == 0) {
-    joystick_fire_mask &= (uint8_t)~0x02;
-  }
-
-  int other_bits = mouse_state & ~0x03;
-  mouse_state = other_bits | mouse_buttons_hid | joystick_fire_mask;
+  atomic_store_explicit(&joystick_fire_mask, fire_bits, memory_order_relaxed);
   return axis_state;
 }
 
@@ -408,10 +448,8 @@ void hidinput_update_mouse(int16_t dx, int16_t dy, bool left_down,
   int new_btns = 0;
   if (right_down) new_btns |= 0x01;
   if (left_down) new_btns |= 0x02;
+  atomic_store_explicit(&mouse_buttons_hid, (uint8_t)(new_btns & 0x03),
+                        memory_order_relaxed);
 
-  int other_bits = mouse_state & ~0x03;
-  mouse_buttons_hid = (uint8_t)(new_btns & 0x03);
-  mouse_state = other_bits | mouse_buttons_hid | joystick_fire_mask;
-
-  mouse_set_speed(dx, dy);
+  mouse_set_speed_hid(dx, dy);
 }
