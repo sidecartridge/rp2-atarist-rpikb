@@ -186,15 +186,17 @@ static u_char dr2_getb(offs)
 u_int offs;
 {
   u_char value;
+  int mouse_btns;
 #if !defined(NDEBUG)
 //  u_char ddr2=iram[DDR2];
 // ASSERT(ddr2==1); // strong
 #endif
   // ASSERT(offs==P2);
   value = 0xFF;  // note bits 5-7=111 in monochip mode, bits 3-4=serial lines
-  if (st_mouse_buttons())  // clear the correct bit (see above)
+  mouse_btns = st_mouse_buttons();
+  if (mouse_btns)  // clear the correct bit (see above)
   {
-    value = (st_mouse_buttons() * 2) % 6;
+    value = (mouse_btns * 2) % 6;
     //    DPRINTF("HD6301 handling mousek %x -> %x\n",mousek,value);
   }
   return value;
