@@ -26,9 +26,20 @@
 #define KBD_BD0SEL_3V3_GPIO 6
 #endif
 
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
 // GPIO for the select ATARI or USB keyboard mode
 #define KBD_ATARI_OUT_3V3_GPIO 7
 #define KBD_USB_OUT_3V3_GPIO 8
+#elif defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_SOUFFLE_REV2
+// GPIO for the select ATARI or USB keyboard mode
+#define KBD_ATARI_OUT_3V3_GPIO 8
+#define KBD_USB_OUT_3V3_GPIO 7
+#else
+#error \
+    "Invalid BOARD_TARGET. Supported values: 1 (Croissant Revision 2), 2 (Souffle Revision 2)."
+#endif
+
+// GPIO for the configuration button (hold to enter configuration mode)
 #define KBD_CONFIG_IN_3V3_GPIO 9
 
 // GPIO assignments for serial connection to Atari ST
