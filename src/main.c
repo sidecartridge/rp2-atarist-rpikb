@@ -63,6 +63,14 @@ static inline void jump_to_booster_app() {
   gpio_put(KBD_ATARI_OUT_3V3_GPIO, 0);
   gpio_put(KBD_USB_OUT_3V3_GPIO, 0);
 
+#if COMPUTER_TARGET_USB
+  // Ensure USB host/timers are fully quiesced before jumping.
+  usbloop_shutdown_for_jump();
+#endif
+
+  // Disable ST UART path to avoid pin/peripheral conflicts after jump.
+  serialp_close();
+
   // Disabling core 1 before leaving
   DPRINTF("Stopping the core 1...\n");
 

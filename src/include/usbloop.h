@@ -27,5 +27,6 @@
 
 int main_usb_loop(int prev_reset_state, int prev_config_state,
                   void (*handle_rx)(void), void (*reset_sequence_cb)(void));
+void usbloop_shutdown_for_jump(void);
 
 #endif  // USBLOOP_H

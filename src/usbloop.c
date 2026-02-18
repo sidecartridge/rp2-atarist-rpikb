@@ -1,5 +1,7 @@
 #include "usbloop.h"
 
+#include "hardware/irq.h"
+#include "hardware/resets.h"
 #include "pico/time.h"
 
 // Provided by main.c
@@ -10,6 +12,10 @@ static volatile bool joystick_poll_timer_enabled = false;
 static volatile bool joystick_poll_usb = false;
 static volatile uint8_t joystick_poll_usb_port = 1;
 static volatile bool joystick_poll_mouse_original = false;
+static repeating_timer_t original_mouse_timer;
+static repeating_timer_t joystick_poll_timer;
+static volatile bool original_mouse_timer_started = false;
+static volatile bool joystick_poll_timer_started = false;
 
 static bool __not_in_flash_func(original_mouse_timer_cb)(repeating_timer_t* rt) {
   (void)rt;
@@ -38,6 +44,26 @@ static bool __not_in_flash_func(joystick_poll_timer_cb)(repeating_timer_t* rt) {
 
   if (!joystick_poll_mouse_original) mouse_update_hid();
   return true;
+}
+
+void usbloop_shutdown_for_jump(void) {
+  original_mouse_timer_enabled = false;
+  joystick_poll_timer_enabled = false;
+
+  if (original_mouse_timer_started) {
+    cancel_repeating_timer(&original_mouse_timer);
+    original_mouse_timer_started = false;
+  }
+
+  if (joystick_poll_timer_started) {
+    cancel_repeating_timer(&joystick_poll_timer);
+    joystick_poll_timer_started = false;
+  }
+
+  // Stop TinyUSB host activity and force USB controller quiet before jump.
+  (void)tuh_deinit(0);
+  irq_set_enabled(USBCTRL_IRQ, false);
+  reset_block(RESETS_RESET_USBCTRL_BITS);
 }
 
 int main_usb_loop(int prev_reset_state, int prev_config_state,
@@ -149,6 +175,7 @@ int main_usb_loop(int prev_reset_state, int prev_config_state,
   // If configuration pin is already asserted, jump to configuration
   // immediately.
   if (prev_config_state) {
+    usbloop_shutdown_for_jump();
     launch_config_cb();
   }
 
@@ -156,8 +183,7 @@ int main_usb_loop(int prev_reset_state, int prev_config_state,
   DPRINTF("Entering main loop...\n");
   absolute_time_t serial_ten_ms = get_absolute_time();
 
-  repeating_timer_t original_mouse_timer;
-  bool original_mouse_timer_started = false;
+  original_mouse_timer_started = false;
   original_mouse_timer_enabled = mouse_original;
   if (mouse_original) {
     if (!add_repeating_timer_us(
@@ -171,8 +197,7 @@ int main_usb_loop(int prev_reset_state, int prev_config_state,
     }
   }
 
-  repeating_timer_t joystick_poll_timer;
-  bool joystick_poll_timer_started = false;
+  joystick_poll_timer_started = false;
   joystick_poll_timer_enabled = true;
   joystick_poll_usb = joystick_usb;
   joystick_poll_usb_port = (uint8_t)joystick_usb_port;
@@ -217,16 +242,7 @@ int main_usb_loop(int prev_reset_state, int prev_config_state,
                 prev_config_state, config_state);
         prev_config_state = config_state;
         if (config_state) {
-          original_mouse_timer_enabled = false;
-          joystick_poll_timer_enabled = false;
-          if (original_mouse_timer_started) {
-            cancel_repeating_timer(&original_mouse_timer);
-            original_mouse_timer_started = false;
-          }
-          if (joystick_poll_timer_started) {
-            cancel_repeating_timer(&joystick_poll_timer);
-            joystick_poll_timer_started = false;
-          }
+          usbloop_shutdown_for_jump();
           launch_config_cb();
         }
       }
