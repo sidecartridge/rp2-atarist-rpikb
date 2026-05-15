@@ -44,22 +44,6 @@ if (DEFINED ENV{PICOTOOL_OVERRIDE_DIR})
     endif()
 endif ()
 
-# Keep BOARD_TYPE aligned with resolved PICO_BOARD for downstream compile definitions.
-set(BOARD_TYPE ${PICO_BOARD})
-
-# Determine board type macros
-if("${BOARD_TYPE}" STREQUAL "pico_w")
-    add_compile_definitions(BOARD_TYPE_PICO_W=1 BOARD_TYPE_PICO=0 BOARD_TYPE_CUSTOM16MB=0)
-elseif("${BOARD_TYPE}" STREQUAL "pico2_w")
-    add_compile_definitions(BOARD_TYPE_PICO_W=1 BOARD_TYPE_PICO=0 BOARD_TYPE_CUSTOM16MB=0)
-elseif("${BOARD_TYPE}" STREQUAL "pico")
-    add_compile_definitions(BOARD_TYPE_PICO_W=0 BOARD_TYPE_PICO=1 BOARD_TYPE_CUSTOM16MB=0)
-elseif("${BOARD_TYPE}" STREQUAL "sidecartos_16mb")
-    add_compile_definitions(BOARD_TYPE_PICO_W=0 BOARD_TYPE_PICO=1 BOARD_TYPE_CUSTOM16MB=0)
-else()
-    message(FATAL_ERROR "Unknown BOARD_TYPE: ${BOARD_TYPE}")
-endif()
-
 # Board target (0=Unknown, 1=Croissant Revision 2, 2=Souffle Revision 2)
 if(DEFINED ENV{BOARD_TARGET})
     set(BOARD_TARGET $ENV{BOARD_TARGET})
