@@ -164,6 +164,18 @@ if(PICO_PLATFORM STREQUAL "rp2350" OR PICO_PLATFORM STREQUAL "rp2350-arm-s" OR P
     set_target_properties(${PROJECT_NAME} PROPERTIES
         PICO_TARGET_LINKER_SCRIPT ${CMAKE_CURRENT_LIST_DIR}/memmap_rp2-ikbd_rp2350.ld
     )
+    # Tell the SDK's pico_btstack_flash_bank to write the BTstack TLV into
+    # the region the linker reserved for BT_TLV (0x101FE000, 8 KB). Without
+    # this, the SDK defaults to PICO_FLASH_SIZE_BYTES - FLASH_SECTOR_SIZE -
+    # PICO_FLASH_BANK_TOTAL_SIZE, which on the 4 MB flash of the Pico 2 W
+    # resolves to 0x3FD000 — outside any linker-reserved region. The
+    # companion booster project's memmap_booster_rp2350.ld also reserves
+    # BT_TLV at 0x101FE000 / 8 KB, so this aligns both projects on the same
+    # storage location.
+    target_compile_definitions(${PROJECT_NAME} PRIVATE
+        PICO_FLASH_BANK_STORAGE_OFFSET=0x1FE000
+        PICO_FLASH_BANK_TOTAL_SIZE=0x2000
+    )
 else()
     set_target_properties(${PROJECT_NAME} PROPERTIES
 #       PICO_TARGET_LINKER_SCRIPT ${CMAKE_CURRENT_LIST_DIR}/memmap_rp2-ikbd_copy_to_ram.ld
