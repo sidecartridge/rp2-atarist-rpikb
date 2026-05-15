@@ -238,9 +238,12 @@ pico_enable_stdio_usb(${PROJECT_NAME} 0)
 # Workaround to disable USB output in release builds
 if(${_DEBUG} STREQUAL "0")
     pico_enable_stdio_uart(${PROJECT_NAME} 0)
+    # --gc-sections only — keep ELF symbols so post-mortem analysis (SWD
+    # dumps, crash trace decoding) is possible from the same release ELF
+    # that produced the deployed UF2. The UF2 image itself carries no ELF
+    # symbols, so stripping the ELF saves nothing on-device.
     target_link_options(${PROJECT_NAME} PRIVATE
     "-Wl,--gc-sections"
-    "-Wl,--strip-all"
     )
 
 else()
