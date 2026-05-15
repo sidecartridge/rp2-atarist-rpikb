@@ -177,6 +177,32 @@ static inline void select_no_source(void) {
   gpio_put(KBD_USB_OUT_3V3_GPIO, 0);
 }
 
+// Per-mode indicator helpers. Semantics differ by board:
+//
+// - Croissant: KBD_ATARI / KBD_USB drive an analog mux that selects whether
+//   the native Atari keyboard or the RP-emulated IKBD feeds the IKBD line.
+//   Both USB and BT modes need the "RP source" position, so both indicator
+//   helpers route to select_rp_keyboard_source().
+//
+// - Souffle: there is no native-Atari source path. The same two GPIOs drive
+//   the BT-labeled and USB-labeled mode-indicator LEDs:
+//       KBD_ATARI_OUT_3V3_GPIO (GPIO 7) -> BT-labeled LED
+//       KBD_USB_OUT_3V3_GPIO   (GPIO 8) -> USB-labeled LED
+//   So we light exactly one at a time based on which RP mode is running.
+#if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_SOUFFLE_REV2
+static inline void indicate_usb_mode(void) {
+  gpio_put(KBD_ATARI_OUT_3V3_GPIO, 0);
+  gpio_put(KBD_USB_OUT_3V3_GPIO, 1);
+}
+static inline void indicate_bt_mode(void) {
+  gpio_put(KBD_USB_OUT_3V3_GPIO, 0);
+  gpio_put(KBD_ATARI_OUT_3V3_GPIO, 1);
+}
+#else
+#define indicate_usb_mode() select_rp_keyboard_source()
+#define indicate_bt_mode() select_rp_keyboard_source()
+#endif
+
 void toogle_ikbd_source_cb(void) {
   int atari_state = gpio_get(KBD_ATARI_OUT_3V3_GPIO);
   int usb_state = gpio_get(KBD_USB_OUT_3V3_GPIO);
@@ -466,7 +492,7 @@ int main() {
       break;
     case KEYBOARD_MODE_BT:
 #if COMPUTER_TARGET_BT
-      select_rp_keyboard_source();
+      indicate_bt_mode();
       main_bt_bluepad32(prev_reset_state, prev_config_state, handle_rx_from_st,
                         reset_sequence_cb_ptr);
 #else
@@ -477,7 +503,7 @@ int main() {
       break;
     case KEYBOARD_MODE_USB:
 #if COMPUTER_TARGET_USB
-      select_rp_keyboard_source();
+      indicate_usb_mode();
       main_usb_loop(prev_reset_state, prev_config_state, handle_rx_from_st,
                     reset_sequence_cb_ptr);
       break;
