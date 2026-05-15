@@ -1,0 +1,39 @@
+name: Build
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.build_type }} / ${{ matrix.board_flavor }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build_type: [release, debug]
+        board_flavor: [croissant, souffle]
+        include:
+          - board_flavor: croissant
+            board_type: pico_w
+          - board_flavor: souffle
+            board_type: pico2_w
+    steps:
+      - name: Checkout the code
+        uses: actions/checkout@v4
+
+      - name: Install the Pico toolchain
+        run: |
+          sudo DEBIAN_FRONTEND=noninteractive apt update
+          sudo DEBIAN_FRONTEND=noninteractive apt install -y \
+            build-essential \
+            cmake \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib
+
+      - name: Build firmware
+        run: ./build.sh ${{ matrix.board_type }} ${{ matrix.build_type }} final ${{ matrix.board_flavor }}
