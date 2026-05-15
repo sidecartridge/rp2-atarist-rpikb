@@ -186,7 +186,7 @@ static inline void jump_to_booster_app() {
       :
       : [start] "r"((unsigned int)&_booster_app_flash_start + 256),
         [vtable] "X"(PPB_BASE + M0PLUS_VTOR_OFFSET)
-      :);
+      : "r0", "r1", "memory", "cc");
   DPRINTF("You should never reach this point\n");
 #elif defined(PICO_RP2350) && PICO_RP2350
   __asm__ __volatile__(
@@ -199,7 +199,7 @@ static inline void jump_to_booster_app() {
       :
       : [start] "r"((unsigned int)&_booster_app_flash_start),
         [vtable] "X"(PPB_BASE + M33_VTOR_OFFSET)
-      :);
+      : "r0", "r1", "memory", "cc");
   DPRINTF("You should never reach this point\n");
 #else
   DPRINTF("Booster jump is only supported on RP2040/RP2350 builds\n");
