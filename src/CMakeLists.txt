@@ -179,7 +179,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-    src
     ${BLUEPAD32_ROOT}/src/components/bluepad32/include)
 
 # Needed when using BTstack from our branch
