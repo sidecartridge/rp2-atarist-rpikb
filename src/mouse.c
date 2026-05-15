@@ -44,7 +44,10 @@ static const mouse_profile_t s_mouse_profiles[MOUSE_PATH_COUNT] = {
     [MOUSE_PATH_NATIVE] =
         {
             .max_speed = 120000.0,
-            .min_speed_us = 500,
+            // 2 ms floor keeps emitted rotation rate below ~500 Hz so the
+            // 6301 ROM's Port-4 quadrature decoder (sampling at ~1 kHz)
+            // does not alias fast motion into reverse direction.
+            .min_speed_us = 2000,
             .deadzone_speed = 0,
             .stop_if_period_us = 120000,
             .idle_timeout_us = 120000,
