@@ -239,61 +239,41 @@ static uint64_t get_first_reset_sequence_cb(void) {
   return ikbd_first_reset_sequence_us;
 }
 
-// Earliest microsecond timestamp at which the next byte may be pushed into
-// the 6301 SCI emulator. Acts as a belt-and-suspenders pacer on top of
-// hd6301_sci_busy(): even if the SCI reports idle, we still wait
-// IKBD_BYTE_US between consecutive pushes so the 6301 sees the steady
-// ~7812-baud cadence it would see from a real ST.
-static uint64_t next_rx_time_us = 0;
+// static absolute_time_t next_rx_time = {0};
 
 /**
  * Read a byte from the physical serial port and pass
  * it to the HD6301
  */
 static inline void handle_rx_from_st() {
-  // The 6301 SCI emulator can hold exactly one byte at a time in its
-  // receive register. Re-check hd6301_sci_busy() before EACH push and bail
-  // out the moment it's busy — the next host-loop iteration will pick up
-  // where we left off. Previous implementation checked once before draining
-  // the whole UART ring, which caused OVR on bytes 2..N of any multi-byte
-  // IKBD command (visible as "6301 OVR SR …" lines in the debug trace).
-  while (rx_available() > 0) {
-    if (hd6301_sci_busy()) {
-      return;
-    }
-    if (time_us_64() < next_rx_time_us) {
-      // Pacer hasn't elapsed yet — wait for the next host-loop tick.
-      return;
-    }
+  // First ensure the 6301 SCI can accept data
+  if (!hd6301_sci_busy() && (rx_available() > 0)) {
+    // Drain all currently available bytes into the 6301
     unsigned char data;
-    if (!rx_buffer_get(&data)) {
-      // Defensive: ring drained between rx_available() and rx_buffer_get()
-      // (would require an ISR in the middle — shouldn't happen with a
-      // single producer, but cheap to handle).
-      return;
-    }
+    while (rx_buffer_get(&data)) {
 #if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
-    if (!ikbd_reset_sequence_recorded) {
-      if (!ikbd_waiting_for_reset_sequence) {
-        ikbd_waiting_for_reset_sequence = (data == IKBD_RESET_SEQ_FIRST_BYTE);
-      } else {
-        if (data == IKBD_RESET_SEQ_SECOND_BYTE) {
-          ikbd_first_reset_sequence_us =
-              to_us_since_boot(get_absolute_time());
-          ikbd_reset_sequence_recorded = true;
-          ikbd_waiting_for_reset_sequence = false;
-          DPRINTF("First RESET sequence seen at %llu us since boot\n",
-                  (unsigned long long)ikbd_first_reset_sequence_us);
+      if (!ikbd_reset_sequence_recorded) {
+        if (!ikbd_waiting_for_reset_sequence) {
+          ikbd_waiting_for_reset_sequence = (data == IKBD_RESET_SEQ_FIRST_BYTE);
         } else {
-          ikbd_waiting_for_reset_sequence =
-              (data == IKBD_RESET_SEQ_FIRST_BYTE);
+          if (data == IKBD_RESET_SEQ_SECOND_BYTE) {
+            ikbd_first_reset_sequence_us =
+                to_us_since_boot(get_absolute_time());
+            ikbd_reset_sequence_recorded = true;
+            ikbd_waiting_for_reset_sequence = false;
+            DPRINTF("First RESET sequence seen at %llu us since boot\n",
+                    (unsigned long long)ikbd_first_reset_sequence_us);
+          } else {
+            ikbd_waiting_for_reset_sequence =
+                (data == IKBD_RESET_SEQ_FIRST_BYTE);
+          }
         }
       }
-    }
 #endif
-    DPRINTF("ST -> 6301 %02X\n", data);
-    hd6301_receive_byte(data);
-    next_rx_time_us = time_us_64() + IKBD_BYTE_US;
+      DPRINTF("ST -> 6301 %02X\n", data);
+      // sleep_us(IKBD_BYTE_US);  // Small delay to avoid overwhelming the 6301
+      hd6301_receive_byte(data);
+    }
   }
 }
 
