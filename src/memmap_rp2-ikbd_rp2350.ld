@@ -26,9 +26,14 @@ MEMORY
     FLASH(rx) : ORIGIN = 0x10000000, LENGTH = 1152k /* Force to allocate in the start region */
 
     RAM(rwx) : ORIGIN =  0x20000000, LENGTH = 512k
-    SCRATCH_X(rwx) : ORIGIN = 0x20040000, LENGTH = 4k
-    SCRATCH_Y(rwx) : ORIGIN = 0x20041000, LENGTH = 4k
-    BOOSTER_APP_FLASH(r) : ORIGIN = 0x10120000, LENGTH = 768K /* Size of the flash for the booster app */ 
+    /* RP2350 has 8 KB of dedicated scratch SRAM in separate banks above the
+     * 512 KB main SRAM (SRAM8 / SRAM9). Previous values (0x20040000 /
+     * 0x20041000) were copied from the RP2040 layout and sat inside main
+     * SRAM, so the scratch banks were unused and the stack tops landed in
+     * main RAM. Matches the booster project's rp2350 linker. */
+    SCRATCH_X(rwx) : ORIGIN = 0x20080000, LENGTH = 4k
+    SCRATCH_Y(rwx) : ORIGIN = 0x20081000, LENGTH = 4k
+    BOOSTER_APP_FLASH(r) : ORIGIN = 0x10120000, LENGTH = 760K /* Size of the flash for the booster app — ends at 0x101DE000 where CONFIG_FLASH begins (matches the booster's own linker reservation) */
 
     CONFIG_FLASH(rwx): ORIGIN = 0x101DE000, LENGTH = 120K /* Config information just below lookup/config/tlv blocks. 30 sectors */
     GLOBAL_LOOKUP_FLASH(rwx): ORIGIN = 0x101FC000, LENGTH = 4K /* The lookup table with apps UUID and the sector number of their config */
