@@ -23,7 +23,9 @@ static bool __not_in_flash_func(original_mouse_timer_cb)(repeating_timer_t* rt) 
   if (!original_mouse_timer_enabled) return true;
 
   joystick_process_mouse_edges();
-  mouse_update_native();
+  // mouse_update_native() intentionally NOT called here — the main loop
+  // drives rotation emission to avoid IRQ-vs-thread bursts on the rotation
+  // register that the 6301 quadrature decoder cannot resolve.
   return true;
 }
 
@@ -223,7 +225,10 @@ int main_usb_loop(int prev_reset_state, int prev_config_state,
     // missed.
     tuh_task();
 
-    if (mouse_original) joystick_read_edges();
+    if (mouse_original) {
+      joystick_read_edges();
+      mouse_update_native();
+    }
 
     if (handle_rx) handle_rx();
 
