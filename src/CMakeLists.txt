@@ -279,7 +279,11 @@ if(CMAKE_BUILD_TYPE STREQUAL "CustomBuild")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS_CUSTOMBUILD}")
 endif()
 
-target_compile_options(${PROJECT_NAME} PRIVATE -Wno-implicit-int)
+# Suppress -Wimplicit-int only on the HD6301 amalgamated TU (third-party
+# Steem SSE / sim68xx K&R-style C — CLAUDE.md forbids reformatting it).
+# Rest of the project gets the default GCC behavior, which warns on
+# implicit-int in our own code.
+set_source_files_properties(6301/6301.c PROPERTIES COMPILE_OPTIONS "-Wno-implicit-int")
 
 # Build is XIP (execute-in-place from flash) — the firmware does not copy
 # .text to RAM. Earlier revisions of this file set
