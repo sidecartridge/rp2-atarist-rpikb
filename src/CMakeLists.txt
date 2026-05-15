@@ -296,8 +296,16 @@ endif()
 
 target_compile_options(${PROJECT_NAME} PRIVATE -Wno-implicit-int)
 
-set(PICO_DEFAULT_BINARY_TYPE copy_to_ram)
-set(PICO_COPY_TO_RAM 1)
+# Build is XIP (execute-in-place from flash) — the firmware does not copy
+# .text to RAM. Earlier revisions of this file set
+# PICO_DEFAULT_BINARY_TYPE=copy_to_ram and PICO_COPY_TO_RAM=1 after
+# pico_sdk_init(), but by then the SDK had already committed to the default
+# binary type, and the custom linker scripts (memmap_rp2-ikbd_*.ld) do not
+# implement the AT > FLASH > RAM staging copy_to_ram requires. Net effect of
+# those settings was nil. They are removed here so the build configuration
+# matches what is actually produced. If a future change wants real
+# copy_to_ram for jitter reasons, the custom linker scripts have to be
+# rewritten in the SDK's memmap_copy_to_ram.ld style.
 
 #set(PICO_FLASH_ASSUME_CORE1_SAFE 1)
 
