@@ -18,6 +18,7 @@
 #if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
 #include "nativeloop.h"
 #endif
+#include "mode_shutdown.h"
 #include "pico/btstack_flash_bank.h"
 #include "pico/cyw43_arch.h"
 #include "pico/flash.h"
@@ -58,15 +59,103 @@ static bool ikbd_reset_sequence_recorded = false;
   ((unsigned int)&_booster_app_flash_start - (unsigned int)XIP_BASE)
 #endif
 
+// Tracks which mode loop is currently active so jump_to_booster_app() can
+// dispatch the right teardown. Each mode loop calls mode_shutdown_set_active()
+// once its peripherals are up; the dispatcher then routes to the matching
+// teardown (USB, BT, native no-op) at jump time. Set under a single 8-bit
+// write so cross-core visibility is straightforward; reads happen from
+// Core 0 only (Core 1 never calls jump_to_booster_app).
+static volatile mode_shutdown_kind_t s_active_mode = MODE_SHUTDOWN_NONE;
+
+void mode_shutdown_set_active(mode_shutdown_kind_t kind) {
+  s_active_mode = kind;
+}
+
+void mode_shutdown_for_jump(void) {
+  switch (s_active_mode) {
+#if COMPUTER_TARGET_USB
+    case MODE_SHUTDOWN_USB:
+      usbloop_shutdown_for_jump();
+      break;
+#endif
+#if COMPUTER_TARGET_BT
+    case MODE_SHUTDOWN_BT:
+      btloop_shutdown_for_jump();
+      break;
+#endif
+    case MODE_SHUTDOWN_NATIVE:
+    case MODE_SHUTDOWN_NONE:
+    default:
+      // Nothing to tear down (native mode has no IRQ-active peripherals;
+      // NONE covers the boot-time direct jump to booster).
+      break;
+  }
+}
+
+// Sanity-check the booster app's vector table before swapping VTOR to it.
+// Catches the case where the booster region is empty or corrupted (e.g., the
+// IKBD UF2 was flashed without first flashing the booster). Returns false if
+// the initial SP or reset vector looks invalid; the caller refuses to jump
+// in that case, leaving the device in a known idle state for diagnosis.
+static bool booster_vector_looks_sane(void) {
+  const uint32_t *vt;
+#if defined(PICO_RP2040) && PICO_RP2040
+  vt = (const uint32_t *)((unsigned int)&_booster_app_flash_start + 256);
+#elif defined(PICO_RP2350) && PICO_RP2350
+  vt = (const uint32_t *)&_booster_app_flash_start;
+#else
+  return false;
+#endif
+  uint32_t sp = vt[0];
+  uint32_t reset = vt[1];
+
+  // Initial Main Stack Pointer must be inside SRAM. Window covers both
+  // RP2040 (264 KB total) and RP2350 (520 KB total) layouts.
+  if (sp < 0x20000000u || sp >= 0x21000000u) {
+    return false;
+  }
+  // Reset vector must have the Thumb bit (bit 0) set and point into the
+  // booster's flash region (BOOSTER_APP_FLASH is 768 KB per linker scripts).
+  if ((reset & 1u) == 0u) {
+    return false;
+  }
+  const uint32_t booster_start = (unsigned int)&_booster_app_flash_start;
+  const uint32_t reset_addr = reset & ~1u;
+  if (reset_addr < booster_start || reset_addr >= booster_start + 0xC0000u) {
+    return false;
+  }
+  return true;
+}
+
+// Hand control to the booster app flashed at _booster_app_flash_start by
+// rewriting Core 0's VTOR and branching to the booster's reset vector.
+//
+// Caller contract: MUST NOT be invoked while Core 0 is mid-flight in a
+// flash_safe_execute() call. multicore_reset_core1() halts Core 1 before it
+// can acknowledge the lockout handshake; any pending flash op on Core 0 will
+// then deadlock waiting for an acknowledgement that can never arrive. Today
+// no caller violates this — settings_save / gconfig_init's defaults save /
+// BTstack TLV writes all happen at boot, before any mode loop is running and
+// therefore before any config-press can fire jump_to_booster_app. If a
+// future change adds a runtime flash write from a mode loop, it MUST drain
+// any in-flight flash work before letting config-press dispatch here.
 static inline void jump_to_booster_app() {
+  // Refuse to jump if the booster vector table is missing or corrupted.
+  // Done before any peripheral teardown so the device stays in a sane state
+  // (LEDs still lit, UART alive) for the user to diagnose.
+  if (!booster_vector_looks_sane()) {
+    DPRINTF(
+        "Booster vector at 0x%X looks invalid (SP/reset out of range). "
+        "Refusing to jump. Power-cycle to recover.\n",
+        (unsigned int)&_booster_app_flash_start);
+    while (1) {
+      tight_loop_contents();
+    }
+  }
+
   // Disable the LEDs before leaving
   gpio_put(KBD_ATARI_OUT_3V3_GPIO, 0);
   gpio_put(KBD_USB_OUT_3V3_GPIO, 0);
-
-#if COMPUTER_TARGET_USB
-  // Ensure USB host/timers are fully quiesced before jumping.
-  usbloop_shutdown_for_jump();
-#endif
 
   // Disable ST UART path to avoid pin/peripheral conflicts after jump.
   serialp_close();
@@ -74,16 +163,29 @@ static inline void jump_to_booster_app() {
   // Disabling core 1 before leaving
   DPRINTF("Stopping the core 1...\n");
 
-  // Mask all maskable interrupts so no in-flight peripheral IRQ can dispatch
-  // after we begin tearing down Core 1 and rewriting VTOR. Without this, a
-  // CYW43 SPI/SDIO IRQ queued before this point can still fire into BTstack
-  // and assert in btstack_run_loop_poll_data_sources_from_irq when later
-  // teardown work nulls the run loop. The booster app sets up its own
-  // interrupt state after the jump; we discard the prior PRIMASK.
+  // Mask all maskable interrupts BEFORE the mode-specific teardown. This is
+  // a hard requirement for the BT path: cyw43_arch_deinit() nulls the
+  // BTstack run loop mid-teardown, and any CYW43 SPI/SDIO IRQ that fires
+  // before the run loop pointer is gone would assert in
+  // btstack_run_loop_poll_data_sources_from_irq. With IRQs masked, no such
+  // dispatch can happen. The booster app sets up its own interrupt state
+  // after the jump; we discard the prior PRIMASK.
   (void)save_and_disable_interrupts();
+
+  // Mode-specific teardown for whichever loop is currently active (USB drops
+  // TinyUSB host + timers; BT deinits CYW43; native is a no-op). Safe to
+  // call even at boot before any mode loop started — the dispatcher's NONE
+  // case is also a no-op.
+  mode_shutdown_for_jump();
 
   // Jumping to the FLASH entry of the booster app
   multicore_reset_core1();
+  // Give Core 1 a settle window before we change Core 0's VTOR. The SDK's
+  // multicore_reset_core1() already handshakes via the FIFO, but on some
+  // boards / clock conditions a few extra microseconds before the asm block
+  // below avoid edge cases where Core 1 is mid-bootrom-fetch when we begin
+  // rewriting state. 100 us is overkill at 225 MHz; cost is negligible.
+  busy_wait_us(100);
   // Jump to booster code (RP2040-only sequence).
 #if defined(PICO_RP2040) && PICO_RP2040
   __asm__ __volatile__(
@@ -96,7 +198,7 @@ static inline void jump_to_booster_app() {
       :
       : [start] "r"((unsigned int)&_booster_app_flash_start + 256),
         [vtable] "X"(PPB_BASE + M0PLUS_VTOR_OFFSET)
-      :);
+      : "r0", "r1", "memory", "cc");
   DPRINTF("You should never reach this point\n");
 #elif defined(PICO_RP2350) && PICO_RP2350
   __asm__ __volatile__(
@@ -109,7 +211,7 @@ static inline void jump_to_booster_app() {
       :
       : [start] "r"((unsigned int)&_booster_app_flash_start),
         [vtable] "X"(PPB_BASE + M33_VTOR_OFFSET)
-      :);
+      : "r0", "r1", "memory", "cc");
   DPRINTF("You should never reach this point\n");
 #else
   DPRINTF("Booster jump is only supported on RP2040/RP2350 builds\n");

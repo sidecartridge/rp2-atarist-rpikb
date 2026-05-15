@@ -2,6 +2,7 @@
 
 #include "constants.h"
 #include "debug.h"
+#include "mode_shutdown.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
 
@@ -25,6 +26,10 @@ void enter_configuration_mode(void) {
 void run_native_keyboard_mode(void (*reset_sequence_cb)(void)) {
   DPRINTF("Entering native keyboard mode (PARAM_MODE=0)\n");
   select_native_keyboard_source();
+  // Register the active mode. Native has no peripherals that need teardown
+  // (the dispatcher's NATIVE case is a no-op) — this keeps the dispatcher
+  // symmetric and gives future native-side state a place to hook in.
+  mode_shutdown_set_active(MODE_SHUTDOWN_NATIVE);
   int prev_config_state = gpio_get(KBD_CONFIG_IN_3V3_GPIO);
   int prev_reset_state = gpio_get(KBD_RESET_IN_3V3_GPIO);
   uint64_t clock_start_us = time_us_64();
