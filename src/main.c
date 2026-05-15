@@ -58,7 +58,55 @@ static bool ikbd_reset_sequence_recorded = false;
   ((unsigned int)&_booster_app_flash_start - (unsigned int)XIP_BASE)
 #endif
 
+// Sanity-check the booster app's vector table before swapping VTOR to it.
+// Catches the case where the booster region is empty or corrupted (e.g., the
+// IKBD UF2 was flashed without first flashing the booster). Returns false if
+// the initial SP or reset vector looks invalid; the caller refuses to jump
+// in that case, leaving the device in a known idle state for diagnosis.
+static bool booster_vector_looks_sane(void) {
+  const uint32_t *vt;
+#if defined(PICO_RP2040) && PICO_RP2040
+  vt = (const uint32_t *)((unsigned int)&_booster_app_flash_start + 256);
+#elif defined(PICO_RP2350) && PICO_RP2350
+  vt = (const uint32_t *)&_booster_app_flash_start;
+#else
+  return false;
+#endif
+  uint32_t sp = vt[0];
+  uint32_t reset = vt[1];
+
+  // Initial Main Stack Pointer must be inside SRAM. Window covers both
+  // RP2040 (264 KB total) and RP2350 (520 KB total) layouts.
+  if (sp < 0x20000000u || sp >= 0x21000000u) {
+    return false;
+  }
+  // Reset vector must have the Thumb bit (bit 0) set and point into the
+  // booster's flash region (BOOSTER_APP_FLASH is 768 KB per linker scripts).
+  if ((reset & 1u) == 0u) {
+    return false;
+  }
+  const uint32_t booster_start = (unsigned int)&_booster_app_flash_start;
+  const uint32_t reset_addr = reset & ~1u;
+  if (reset_addr < booster_start || reset_addr >= booster_start + 0xC0000u) {
+    return false;
+  }
+  return true;
+}
+
 static inline void jump_to_booster_app() {
+  // Refuse to jump if the booster vector table is missing or corrupted.
+  // Done before any peripheral teardown so the device stays in a sane state
+  // (LEDs still lit, UART alive) for the user to diagnose.
+  if (!booster_vector_looks_sane()) {
+    DPRINTF(
+        "Booster vector at 0x%X looks invalid (SP/reset out of range). "
+        "Refusing to jump. Power-cycle to recover.\n",
+        (unsigned int)&_booster_app_flash_start);
+    while (1) {
+      tight_loop_contents();
+    }
+  }
+
   // Disable the LEDs before leaving
   gpio_put(KBD_ATARI_OUT_3V3_GPIO, 0);
   gpio_put(KBD_USB_OUT_3V3_GPIO, 0);
