@@ -25,7 +25,8 @@
       },
       "environment": {
         "BOARD_TARGET": "1",
-        "PICO_PLATFORM": "pico_w"
+        "PICO_PLATFORM": "pico_w",
+        "DEBUG_MODE": "1"
       }
     },
     {
@@ -39,7 +40,8 @@
       },
       "environment": {
         "BOARD_TARGET": "2",
-        "PICO_PLATFORM": "pico2_w"
+        "PICO_PLATFORM": "pico2_w",
+        "DEBUG_MODE": "1"
       }
     },
     {
@@ -53,7 +55,8 @@
       },
       "environment": {
         "BOARD_TARGET": "1",
-        "PICO_PLATFORM": "pico_w"
+        "PICO_PLATFORM": "pico_w",
+        "DEBUG_MODE": "0"
       }
     },
     {
@@ -67,7 +70,8 @@
       },
       "environment": {
         "BOARD_TARGET": "2",
-        "PICO_PLATFORM": "pico2_w"
+        "PICO_PLATFORM": "pico2_w",
+        "DEBUG_MODE": "0"
       }
     }
   ],
