@@ -239,7 +239,12 @@ static uint64_t get_first_reset_sequence_cb(void) {
   return ikbd_first_reset_sequence_us;
 }
 
-// static absolute_time_t next_rx_time = {0};
+// Earliest microsecond timestamp at which the next byte may be pushed into
+// the 6301 SCI emulator. Acts as a belt-and-suspenders pacer on top of
+// hd6301_sci_busy(): even if the SCI reports idle, we still wait
+// IKBD_BYTE_US between consecutive pushes so the 6301 sees the steady
+// ~7812-baud cadence it would see from a real ST.
+static uint64_t next_rx_time_us = 0;
 
 /**
  * Read a byte from the physical serial port and pass
@@ -254,6 +259,10 @@ static inline void handle_rx_from_st() {
   // IKBD command (visible as "6301 OVR SR …" lines in the debug trace).
   while (rx_available() > 0) {
     if (hd6301_sci_busy()) {
+      return;
+    }
+    if (time_us_64() < next_rx_time_us) {
+      // Pacer hasn't elapsed yet — wait for the next host-loop tick.
       return;
     }
     unsigned char data;
@@ -284,6 +293,7 @@ static inline void handle_rx_from_st() {
 #endif
     DPRINTF("ST -> 6301 %02X\n", data);
     hd6301_receive_byte(data);
+    next_rx_time_us = time_us_64() + IKBD_BYTE_US;
   }
 }
 
