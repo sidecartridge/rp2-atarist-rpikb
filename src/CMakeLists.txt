@@ -211,38 +211,43 @@ include_directories(${CMAKE_CURRENT_LIST_DIR})
 add_subdirectory(${BLUEPAD32_ROOT}/src/components/bluepad32 libbluepad32)
 
 
-# Fetch the values from the environment variables
+# Fetch the values from the environment variables. set() with an unset env
+# var defines the cache var to the empty string (not "undefined"), so checks
+# below use `NOT <var>` which catches both undefined and empty-string.
 set(RELEASE_TYPE $ENV{RELEASE_TYPE})
 set(RELEASE_VERSION $ENV{RELEASE_VERSION})
 set(RELEASE_DATE $ENV{RELEASE_DATE})
 
-# If the environment variables are not set, use default values
-if(NOT DEFINED RELEASE_VERSION)
-
-    # Check if RELEASE_TYPE is set and not empty, otherwise use default "FINAL"
-    if(NOT DEFINED RELEASE_TYPE OR RELEASE_TYPE STREQUAL "")
+# If RELEASE_VERSION wasn't supplied via env (the cmake --preset path), read it
+# from version.txt (or version-<type>.txt). Without this, the macro baked into
+# the binary is the empty string and the firmware reports a blank version.
+if(NOT RELEASE_VERSION)
+    if(NOT RELEASE_TYPE)
         set(RELEASE_TYPE "final")
     endif()
 
-    # Determine the file name based on RELEASE_TYPE
     if(RELEASE_TYPE STREQUAL "final")
         set(VERSION_FILE_NAME "version.txt")
     else()
         set(VERSION_FILE_NAME "version-${RELEASE_TYPE}.txt")
     endif()
-    
-    # Remove newline character if present
-    string(STRIP "${RELEASE_VERSION}" RELEASE_VERSION)
 
-    # In case version.txt is empty or does not exist, use a default version
-    if("${RELEASE_VERSION}" STREQUAL "")
+    set(VERSION_FILE_PATH "${CMAKE_CURRENT_LIST_DIR}/../${VERSION_FILE_NAME}")
+    if(EXISTS "${VERSION_FILE_PATH}")
+        file(READ "${VERSION_FILE_PATH}" RELEASE_VERSION)
+        string(STRIP "${RELEASE_VERSION}" RELEASE_VERSION)
+    endif()
+
+    # If the file is missing or empty, fall back to a dev marker so the
+    # binary always carries a non-empty version string.
+    if(NOT RELEASE_VERSION)
         set(RELEASE_VERSION "v0.0.1dev")
     endif()
 endif()
 
-if(NOT DEFINED RELEASE_DATE)
-        string(TIMESTAMP CURRENT_DATE_TIME "%Y-%m-%d %H:%M:%S")
-        set(RELEASE_DATE ${CURRENT_DATE_TIME})
+if(NOT RELEASE_DATE)
+    string(TIMESTAMP CURRENT_DATE_TIME "%Y-%m-%d %H:%M:%S")
+    set(RELEASE_DATE ${CURRENT_DATE_TIME})
 endif()
 
 # Debug outputs
