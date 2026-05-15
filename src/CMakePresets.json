@@ -24,7 +24,9 @@
         "CMAKE_BUILD_TYPE": "Debug"
       },
       "environment": {
-        "BOARD_TARGET": "1"
+        "BOARD_TARGET": "1",
+        "PICO_PLATFORM": "pico_w",
+        "DEBUG_MODE": "1"
       }
     },
     {
@@ -37,7 +39,9 @@
         "CMAKE_BUILD_TYPE": "Debug"
       },
       "environment": {
-        "BOARD_TARGET": "2"
+        "BOARD_TARGET": "2",
+        "PICO_PLATFORM": "pico2_w",
+        "DEBUG_MODE": "1"
       }
     },
     {
@@ -50,7 +54,9 @@
         "CMAKE_BUILD_TYPE": "Release"
       },
       "environment": {
-        "BOARD_TARGET": "1"
+        "BOARD_TARGET": "1",
+        "PICO_PLATFORM": "pico_w",
+        "DEBUG_MODE": "0"
       }
     },
     {
@@ -63,7 +69,9 @@
         "CMAKE_BUILD_TYPE": "Release"
       },
       "environment": {
-        "BOARD_TARGET": "2"
+        "BOARD_TARGET": "2",
+        "PICO_PLATFORM": "pico2_w",
+        "DEBUG_MODE": "0"
       }
     }
   ],

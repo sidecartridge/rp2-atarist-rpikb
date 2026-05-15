@@ -67,7 +67,9 @@ On Croissant only, the Atari IKBD reset sequence (`0x80 0x01`) is timestamped; h
 
 Custom linker scripts (`memmap_rp2-ikbd_default.ld`, `memmap_rp2-ikbd_rp2350.ld`) reserve flash regions for the booster app, config, global lookup, global config, and the BTstack TLV bank. `main.c` references these via `extern unsigned int _booster_app_flash_start` etc. (declared in `constants.h`). When changing flash layout, update both the linker script and the consuming `extern` symbols.
 
-The build is `copy_to_ram` (`PICO_DEFAULT_BINARY_TYPE copy_to_ram`), and clock is overclocked to 225 MHz at 1.20 V (`RP2040_CLOCK_FREQ_KHZ`, `RP2040_VOLTAGE` in `constants.h`).
+The build runs **XIP (execute-in-place from flash)** — `.text` lives in flash and is fetched by the XIP cache during execution. Earlier revisions of `src/CMakeLists.txt` declared `PICO_DEFAULT_BINARY_TYPE=copy_to_ram` *after* `pico_sdk_init()` (too late) and the custom linker scripts never did the `AT > FLASH > RAM` staging copy_to_ram requires; the settings had no effect. Those lines are now removed. If a future change wants RAM execution for timing-jitter reasons, the linker scripts need a `memmap_copy_to_ram.ld`-style rewrite.
+
+Clock is overclocked to 225 MHz at 1.20 V (`RP2040_CLOCK_FREQ_KHZ`, `RP2040_VOLTAGE` in `constants.h`).
 
 ### Vendored dependencies
 
@@ -94,6 +96,8 @@ Project-level planning (Epics / Stories / Tasks, progress tracking, design notes
 - any file outside `docs/` itself
 
 When writing a commit, describe the change in its own terms ("fix BT keyboard report layout", "consolidate booster-jump teardown") — not as "completes the booster-jump-safety epic" or similar.
+
+**Branch-to-Epic rule:** one branch per **Epic**, not per Story. A Story is a single commit on the Epic's branch (or a small set of related commits). The Epic ships as one PR containing the full sequence of Story commits. Branch names describe the work area in their own terms (e.g., `fix/booster-jump-safety`), never citing a planning ID. This keeps the public git history shaped around themes the user understands, not around the internal planning structure.
 
 ## Editing guardrails
 

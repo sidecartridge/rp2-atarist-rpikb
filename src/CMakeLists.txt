@@ -44,22 +44,6 @@ if (DEFINED ENV{PICOTOOL_OVERRIDE_DIR})
     endif()
 endif ()
 
-# Keep BOARD_TYPE aligned with resolved PICO_BOARD for downstream compile definitions.
-set(BOARD_TYPE ${PICO_BOARD})
-
-# Determine board type macros
-if("${BOARD_TYPE}" STREQUAL "pico_w")
-    add_compile_definitions(BOARD_TYPE_PICO_W=1 BOARD_TYPE_PICO=0 BOARD_TYPE_CUSTOM16MB=0)
-elseif("${BOARD_TYPE}" STREQUAL "pico2_w")
-    add_compile_definitions(BOARD_TYPE_PICO_W=1 BOARD_TYPE_PICO=0 BOARD_TYPE_CUSTOM16MB=0)
-elseif("${BOARD_TYPE}" STREQUAL "pico")
-    add_compile_definitions(BOARD_TYPE_PICO_W=0 BOARD_TYPE_PICO=1 BOARD_TYPE_CUSTOM16MB=0)
-elseif("${BOARD_TYPE}" STREQUAL "sidecartos_16mb")
-    add_compile_definitions(BOARD_TYPE_PICO_W=0 BOARD_TYPE_PICO=1 BOARD_TYPE_CUSTOM16MB=0)
-else()
-    message(FATAL_ERROR "Unknown BOARD_TYPE: ${BOARD_TYPE}")
-endif()
-
 # Board target (0=Unknown, 1=Croissant Revision 2, 2=Souffle Revision 2)
 if(DEFINED ENV{BOARD_TARGET})
     set(BOARD_TARGET $ENV{BOARD_TARGET})
@@ -170,7 +154,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     pico_btstack_classic
     pico_cyw43_arch_none
     tinyusb_board
-    tinyusb_device
     tinyusb_host
     settings                 # Custom settings library
     bluepad32
@@ -196,7 +179,6 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 )
 
 target_include_directories(${PROJECT_NAME} PRIVATE
-    src
     ${BLUEPAD32_ROOT}/src/components/bluepad32/include)
 
 # Needed when using BTstack from our branch
@@ -211,38 +193,43 @@ include_directories(${CMAKE_CURRENT_LIST_DIR})
 add_subdirectory(${BLUEPAD32_ROOT}/src/components/bluepad32 libbluepad32)
 
 
-# Fetch the values from the environment variables
+# Fetch the values from the environment variables. set() with an unset env
+# var defines the cache var to the empty string (not "undefined"), so checks
+# below use `NOT <var>` which catches both undefined and empty-string.
 set(RELEASE_TYPE $ENV{RELEASE_TYPE})
 set(RELEASE_VERSION $ENV{RELEASE_VERSION})
 set(RELEASE_DATE $ENV{RELEASE_DATE})
 
-# If the environment variables are not set, use default values
-if(NOT DEFINED RELEASE_VERSION)
-
-    # Check if RELEASE_TYPE is set and not empty, otherwise use default "FINAL"
-    if(NOT DEFINED RELEASE_TYPE OR RELEASE_TYPE STREQUAL "")
+# If RELEASE_VERSION wasn't supplied via env (the cmake --preset path), read it
+# from version.txt (or version-<type>.txt). Without this, the macro baked into
+# the binary is the empty string and the firmware reports a blank version.
+if(NOT RELEASE_VERSION)
+    if(NOT RELEASE_TYPE)
         set(RELEASE_TYPE "final")
     endif()
 
-    # Determine the file name based on RELEASE_TYPE
     if(RELEASE_TYPE STREQUAL "final")
         set(VERSION_FILE_NAME "version.txt")
     else()
         set(VERSION_FILE_NAME "version-${RELEASE_TYPE}.txt")
     endif()
-    
-    # Remove newline character if present
-    string(STRIP "${RELEASE_VERSION}" RELEASE_VERSION)
 
-    # In case version.txt is empty or does not exist, use a default version
-    if("${RELEASE_VERSION}" STREQUAL "")
+    set(VERSION_FILE_PATH "${CMAKE_CURRENT_LIST_DIR}/../${VERSION_FILE_NAME}")
+    if(EXISTS "${VERSION_FILE_PATH}")
+        file(READ "${VERSION_FILE_PATH}" RELEASE_VERSION)
+        string(STRIP "${RELEASE_VERSION}" RELEASE_VERSION)
+    endif()
+
+    # If the file is missing or empty, fall back to a dev marker so the
+    # binary always carries a non-empty version string.
+    if(NOT RELEASE_VERSION)
         set(RELEASE_VERSION "v0.0.1dev")
     endif()
 endif()
 
-if(NOT DEFINED RELEASE_DATE)
-        string(TIMESTAMP CURRENT_DATE_TIME "%Y-%m-%d %H:%M:%S")
-        set(RELEASE_DATE ${CURRENT_DATE_TIME})
+if(NOT RELEASE_DATE)
+    string(TIMESTAMP CURRENT_DATE_TIME "%Y-%m-%d %H:%M:%S")
+    set(RELEASE_DATE ${CURRENT_DATE_TIME})
 endif()
 
 # Debug outputs
@@ -250,9 +237,12 @@ pico_enable_stdio_usb(${PROJECT_NAME} 0)
 # Workaround to disable USB output in release builds
 if(${_DEBUG} STREQUAL "0")
     pico_enable_stdio_uart(${PROJECT_NAME} 0)
+    # --gc-sections only — keep ELF symbols so post-mortem analysis (SWD
+    # dumps, crash trace decoding) is possible from the same release ELF
+    # that produced the deployed UF2. The UF2 image itself carries no ELF
+    # symbols, so stripping the ELF saves nothing on-device.
     target_link_options(${PROJECT_NAME} PRIVATE
     "-Wl,--gc-sections"
-    "-Wl,--strip-all"
     )
 
 else()
@@ -289,10 +279,22 @@ if(CMAKE_BUILD_TYPE STREQUAL "CustomBuild")
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS_CUSTOMBUILD}")
 endif()
 
-target_compile_options(${PROJECT_NAME} PRIVATE -Wno-implicit-int)
+# Suppress -Wimplicit-int only on the HD6301 amalgamated TU (third-party
+# Steem SSE / sim68xx K&R-style C — CLAUDE.md forbids reformatting it).
+# Rest of the project gets the default GCC behavior, which warns on
+# implicit-int in our own code.
+set_source_files_properties(6301/6301.c PROPERTIES COMPILE_OPTIONS "-Wno-implicit-int")
 
-set(PICO_DEFAULT_BINARY_TYPE copy_to_ram)
-set(PICO_COPY_TO_RAM 1)
+# Build is XIP (execute-in-place from flash) — the firmware does not copy
+# .text to RAM. Earlier revisions of this file set
+# PICO_DEFAULT_BINARY_TYPE=copy_to_ram and PICO_COPY_TO_RAM=1 after
+# pico_sdk_init(), but by then the SDK had already committed to the default
+# binary type, and the custom linker scripts (memmap_rp2-ikbd_*.ld) do not
+# implement the AT > FLASH > RAM staging copy_to_ram requires. Net effect of
+# those settings was nil. They are removed here so the build configuration
+# matches what is actually produced. If a future change wants real
+# copy_to_ram for jitter reasons, the custom linker scripts have to be
+# rewritten in the SDK's memmap_copy_to_ram.ld style.
 
 #set(PICO_FLASH_ASSUME_CORE1_SAFE 1)
 
