@@ -74,6 +74,14 @@ static inline void jump_to_booster_app() {
   // Disabling core 1 before leaving
   DPRINTF("Stopping the core 1...\n");
 
+  // Mask all maskable interrupts so no in-flight peripheral IRQ can dispatch
+  // after we begin tearing down Core 1 and rewriting VTOR. Without this, a
+  // CYW43 SPI/SDIO IRQ queued before this point can still fire into BTstack
+  // and assert in btstack_run_loop_poll_data_sources_from_irq when later
+  // teardown work nulls the run loop. The booster app sets up its own
+  // interrupt state after the jump; we discard the prior PRIMASK.
+  (void)save_and_disable_interrupts();
+
   // Jumping to the FLASH entry of the booster app
   multicore_reset_core1();
   // Jump to booster code (RP2040-only sequence).
