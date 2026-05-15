@@ -32,8 +32,8 @@
 #define KBD_USB_OUT_3V3_GPIO 8
 #elif defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_SOUFFLE_REV2
 // GPIO for the select ATARI or USB keyboard mode
-#define KBD_ATARI_OUT_3V3_GPIO 8
-#define KBD_USB_OUT_3V3_GPIO 7
+#define KBD_ATARI_OUT_3V3_GPIO 7
+#define KBD_USB_OUT_3V3_GPIO 8
 #else
 #error \
     "Invalid BOARD_TARGET. Supported values: 1 (Croissant Revision 2), 2 (Souffle Revision 2)."
