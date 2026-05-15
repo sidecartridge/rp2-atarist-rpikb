@@ -84,6 +84,12 @@ static inline void jump_to_booster_app() {
 
   // Jumping to the FLASH entry of the booster app
   multicore_reset_core1();
+  // Give Core 1 a settle window before we change Core 0's VTOR. The SDK's
+  // multicore_reset_core1() already handshakes via the FIFO, but on some
+  // boards / clock conditions a few extra microseconds before the asm block
+  // below avoid edge cases where Core 1 is mid-bootrom-fetch when we begin
+  // rewriting state. 100 us is overkill at 225 MHz; cost is negligible.
+  busy_wait_us(100);
   // Jump to booster code (RP2040-only sequence).
 #if defined(PICO_RP2040) && PICO_RP2040
   __asm__ __volatile__(
