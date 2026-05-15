@@ -127,6 +127,18 @@ static bool booster_vector_looks_sane(void) {
   return true;
 }
 
+// Hand control to the booster app flashed at _booster_app_flash_start by
+// rewriting Core 0's VTOR and branching to the booster's reset vector.
+//
+// Caller contract: MUST NOT be invoked while Core 0 is mid-flight in a
+// flash_safe_execute() call. multicore_reset_core1() halts Core 1 before it
+// can acknowledge the lockout handshake; any pending flash op on Core 0 will
+// then deadlock waiting for an acknowledgement that can never arrive. Today
+// no caller violates this — settings_save / gconfig_init's defaults save /
+// BTstack TLV writes all happen at boot, before any mode loop is running and
+// therefore before any config-press can fire jump_to_booster_app. If a
+// future change adds a runtime flash write from a mode loop, it MUST drain
+// any in-flight flash work before letting config-press dispatch here.
 static inline void jump_to_booster_app() {
   // Refuse to jump if the booster vector table is missing or corrupted.
   // Done before any peripheral teardown so the device stays in a sane state
