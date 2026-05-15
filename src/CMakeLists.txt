@@ -170,7 +170,6 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     pico_btstack_classic
     pico_cyw43_arch_none
     tinyusb_board
-    tinyusb_device
     tinyusb_host
     settings                 # Custom settings library
     bluepad32
