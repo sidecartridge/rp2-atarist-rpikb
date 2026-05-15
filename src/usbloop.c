@@ -2,6 +2,7 @@
 
 #include "hardware/irq.h"
 #include "hardware/resets.h"
+#include "mode_shutdown.h"
 #include "pico/time.h"
 
 // Provided by main.c
@@ -85,6 +86,9 @@ int main_usb_loop(int prev_reset_state, int prev_config_state,
     board_init_after_tusb();
   }
   DPRINTF("USB initialization complete.\n");
+
+  // Register the active mode so jump_to_booster_app() dispatches USB teardown.
+  mode_shutdown_set_active(MODE_SHUTDOWN_USB);
 
   // Mouse initialization
   mouse_init();
@@ -173,9 +177,9 @@ int main_usb_loop(int prev_reset_state, int prev_config_state,
   joystick_set_autoshoot(joystick_usb, joystick_autoshoot);
 
   // If configuration pin is already asserted, jump to configuration
-  // immediately.
+  // immediately. jump_to_booster_app() dispatches usbloop_shutdown_for_jump()
+  // via mode_shutdown_for_jump() — no need to call it explicitly here.
   if (prev_config_state) {
-    usbloop_shutdown_for_jump();
     launch_config_cb();
   }
 
@@ -242,7 +246,6 @@ int main_usb_loop(int prev_reset_state, int prev_config_state,
                 prev_config_state, config_state);
         prev_config_state = config_state;
         if (config_state) {
-          usbloop_shutdown_for_jump();
           launch_config_cb();
         }
       }

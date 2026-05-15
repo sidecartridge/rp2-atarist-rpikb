@@ -8,6 +8,7 @@
 #include "btstack_util.h"
 #include "gconfig.h"
 #include "joystick.h"
+#include "mode_shutdown.h"
 #include "pico/async_context.h"
 #include "pico/cyw43_arch.h"
 #include "pico/stdlib.h"
@@ -1026,6 +1027,11 @@ int main_bt_bluepad32(int prev_reset_state, int prev_config_state,
   // Ensure BTstack is marked as running for this loop.
   btstack_paused = false;
 
+  // Register the active mode so jump_to_booster_app() dispatches the BT
+  // teardown (cyw43_arch_deinit) instead of leaving CYW43 IRQs live across
+  // the VTOR swap.
+  mode_shutdown_set_active(MODE_SHUTDOWN_BT);
+
   if (prev_config_state) {
     launch_config_cb();
   }
@@ -1059,4 +1065,22 @@ int main_bt_bluepad32(int prev_reset_state, int prev_config_state,
   }
 
   return 0;
+}
+
+void btloop_shutdown_for_jump(void) {
+  // Caller (jump_to_booster_app) has already masked CPU interrupts via
+  // save_and_disable_interrupts(). Without that mask, the CYW43 SPI/SDIO
+  // IRQ that races cyw43_arch_deinit()'s internal null-out of the BTstack
+  // run loop asserts in btstack_run_loop_poll_data_sources_from_irq.
+  //
+  // Drain a few async-context cycles to give already-queued BTstack work a
+  // chance to settle. With IRQs masked, no new work is being queued — this
+  // just flushes the queue.
+  for (int i = 0; i < 4; i++) {
+    async_context_poll(cyw43_arch_async_context());
+  }
+  // Power CYW43 down. Tears down the SPI/PIO/IRQ resources and disables the
+  // CYW43 NVIC vector so stray hardware activity post-jump can't fire into
+  // the booster app's vector table.
+  cyw43_arch_deinit();
 }

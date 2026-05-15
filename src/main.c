@@ -18,6 +18,7 @@
 #if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
 #include "nativeloop.h"
 #endif
+#include "mode_shutdown.h"
 #include "pico/btstack_flash_bank.h"
 #include "pico/cyw43_arch.h"
 #include "pico/flash.h"
@@ -57,6 +58,39 @@ static bool ikbd_reset_sequence_recorded = false;
 #define USBDRIVE_APP_OFFSET \
   ((unsigned int)&_booster_app_flash_start - (unsigned int)XIP_BASE)
 #endif
+
+// Tracks which mode loop is currently active so jump_to_booster_app() can
+// dispatch the right teardown. Each mode loop calls mode_shutdown_set_active()
+// once its peripherals are up; the dispatcher then routes to the matching
+// teardown (USB, BT, native no-op) at jump time. Set under a single 8-bit
+// write so cross-core visibility is straightforward; reads happen from
+// Core 0 only (Core 1 never calls jump_to_booster_app).
+static volatile mode_shutdown_kind_t s_active_mode = MODE_SHUTDOWN_NONE;
+
+void mode_shutdown_set_active(mode_shutdown_kind_t kind) {
+  s_active_mode = kind;
+}
+
+void mode_shutdown_for_jump(void) {
+  switch (s_active_mode) {
+#if COMPUTER_TARGET_USB
+    case MODE_SHUTDOWN_USB:
+      usbloop_shutdown_for_jump();
+      break;
+#endif
+#if COMPUTER_TARGET_BT
+    case MODE_SHUTDOWN_BT:
+      btloop_shutdown_for_jump();
+      break;
+#endif
+    case MODE_SHUTDOWN_NATIVE:
+    case MODE_SHUTDOWN_NONE:
+    default:
+      // Nothing to tear down (native mode has no IRQ-active peripherals;
+      // NONE covers the boot-time direct jump to booster).
+      break;
+  }
+}
 
 // Sanity-check the booster app's vector table before swapping VTOR to it.
 // Catches the case where the booster region is empty or corrupted (e.g., the
@@ -111,24 +145,26 @@ static inline void jump_to_booster_app() {
   gpio_put(KBD_ATARI_OUT_3V3_GPIO, 0);
   gpio_put(KBD_USB_OUT_3V3_GPIO, 0);
 
-#if COMPUTER_TARGET_USB
-  // Ensure USB host/timers are fully quiesced before jumping.
-  usbloop_shutdown_for_jump();
-#endif
-
   // Disable ST UART path to avoid pin/peripheral conflicts after jump.
   serialp_close();
 
   // Disabling core 1 before leaving
   DPRINTF("Stopping the core 1...\n");
 
-  // Mask all maskable interrupts so no in-flight peripheral IRQ can dispatch
-  // after we begin tearing down Core 1 and rewriting VTOR. Without this, a
-  // CYW43 SPI/SDIO IRQ queued before this point can still fire into BTstack
-  // and assert in btstack_run_loop_poll_data_sources_from_irq when later
-  // teardown work nulls the run loop. The booster app sets up its own
-  // interrupt state after the jump; we discard the prior PRIMASK.
+  // Mask all maskable interrupts BEFORE the mode-specific teardown. This is
+  // a hard requirement for the BT path: cyw43_arch_deinit() nulls the
+  // BTstack run loop mid-teardown, and any CYW43 SPI/SDIO IRQ that fires
+  // before the run loop pointer is gone would assert in
+  // btstack_run_loop_poll_data_sources_from_irq. With IRQs masked, no such
+  // dispatch can happen. The booster app sets up its own interrupt state
+  // after the jump; we discard the prior PRIMASK.
   (void)save_and_disable_interrupts();
+
+  // Mode-specific teardown for whichever loop is currently active (USB drops
+  // TinyUSB host + timers; BT deinits CYW43; native is a no-op). Safe to
+  // call even at boot before any mode loop started — the dispatcher's NONE
+  // case is also a no-op.
+  mode_shutdown_for_jump();
 
   // Jumping to the FLASH entry of the booster app
   multicore_reset_core1();
