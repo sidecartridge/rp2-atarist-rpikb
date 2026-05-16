@@ -1,14 +1,19 @@
-# Atari ST IKBD Bluetooth + USB + Native Emulator with Raspberry Pi Pico W
+# Atari ST IKBD Bluetooth + USB + Native Emulator with Raspberry Pi Pico 2 W
 
-This project lets you use a humble **Raspberry Pi Pico W** as a full emulator for the **HD6301**, the microcontroller inside the Atari ST keyboard (ST / STe / TT).
+This project lets you use a humble **Raspberry Pi Pico 2 W** as a full emulator for the **HD6301**, the microcontroller inside the Atari ST keyboard (ST / STe / TT).
 
 In other words: the Pico pretends to be the real IKBD. No hacks. No half measures. The Atari thinks it’s talking to its keyboard. Because it is.
+
+Two carrier boards are supported (both on Pico 2 W / RP2350):
+
+* **Croissant** — Native Atari input path + Bluetooth. You can plug original Atari joysticks and mice into the joystick port.
+* **Souffle** — USB host + Bluetooth. USB keyboards / mice / gamepads work directly.
 
 Typical use cases:
 
 * **Mega ST / Mega STe / TT with no keyboard**
   The emulator gives you Bluetooth / USB keyboard + mouse + gamepads.
-  And you can still plug **native Atari joysticks and mice** too.
+  And you can still plug **native Atari joysticks and mice** into the joystick port.
 
 * **Standard ST / STe** where you just want modern input devices
   Bluetooth keyboard. Bluetooth mouse. Controllers. Done.
@@ -70,15 +75,18 @@ cmake --build build -j
 
 ## Using the emulator
 
-1. Build the firmware and copy the UF2 from `dist/` to the Pico W.
-2. Connect the board to the Atari ST IKBD interface using your hardware
-   adapter or carrier board.
-3. Power on the Atari and pair Bluetooth/USB devices as needed.
+1. Build the firmware and copy the UF2 from `dist/` to the board (Pico W or Pico 2 W).
+2. Plug the board into the Atari ST IKBD interface using your hardware adapter or carrier board.
+3. Power on the Atari. The on-board LEDs tell you which mode the firmware booted into — **Native**, **USB**, or **Bluetooth**.
+4. To change modes, pair Bluetooth devices, pick a keyboard layout, choose native vs USB mouse, etc., drop into the **configuration app**:
+   * On **Souffle**, hold the **config button**.
+   * On **Croissant**, hold the Atari's keyboard reset for 10+ seconds (3–10 s just toggles the IKBD source).
+
+The configuration app is a separate firmware that lives in its own flash region. The IKBD firmware tears down whatever it's doing (USB host, Bluetooth, native input) before handing control over, so the jump is clean. When you're done, reboot and you're back in the active mode.
 
 Notes:
-- Bluetooth support uses Bluepad32; some devices may require pairing steps
-  specific to the controller/keyboard.
-- USB host support is basic and may not enumerate every device.
+- Bluetooth uses Bluepad32. Some devices may need specific pairing steps. Pairings persist across reboots once configured.
+- USB host support is basic. Works for common stuff, not trying to be a full desktop USB stack.
 
 ## Known limitations
 
