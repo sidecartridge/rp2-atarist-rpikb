@@ -10,6 +10,7 @@
 #include "debug.h"
 #include "gconfig.h"
 #include "hardware/clocks.h"
+#include "hardware/pwm.h"
 #if defined(PICO_RP2040) && PICO_RP2040
 #include "hardware/regs/m0plus.h"
 #elif defined(PICO_RP2350) && PICO_RP2350
@@ -302,13 +303,38 @@ static inline void select_no_source(void) {
 //       KBD_USB_OUT_3V3_GPIO   (GPIO 8) -> USB-labeled LED
 //   So we light exactly one at a time based on which RP mode is running.
 #if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_SOUFFLE_REV2
+// Active mode-indicator LED brightness as a PWM duty. The LED is held lit for
+// the entire session, so at the lowered core operating point it is a large
+// share of board current. ~20% keeps it clearly visible while cutting most of
+// that current. PWM frequency (sys_clk / (wrap+1) ~= 50 kHz) is far above any
+// visible flicker. Tune MODE_LED_PWM_LEVEL to taste.
+#define MODE_LED_PWM_WRAP 1000
+#define MODE_LED_PWM_LEVEL 200
+
+// Drive a mode-LED pin off (plain GPIO low).
+static inline void mode_led_off(uint pin) {
+  gpio_set_function(pin, GPIO_FUNC_SIO);
+  gpio_set_dir(pin, GPIO_OUT);
+  gpio_put(pin, 0);
+}
+
+// Drive a mode-LED pin dimmed via PWM at MODE_LED_PWM_LEVEL duty.
+static inline void mode_led_dim(uint pin) {
+  gpio_set_function(pin, GPIO_FUNC_PWM);
+  uint slice = pwm_gpio_to_slice_num(pin);
+  uint chan = pwm_gpio_to_channel(pin);
+  pwm_set_wrap(slice, MODE_LED_PWM_WRAP);
+  pwm_set_chan_level(slice, chan, MODE_LED_PWM_LEVEL);
+  pwm_set_enabled(slice, true);
+}
+
 static inline void indicate_usb_mode(void) {
-  gpio_put(KBD_ATARI_OUT_3V3_GPIO, 0);
-  gpio_put(KBD_USB_OUT_3V3_GPIO, 1);
+  mode_led_off(KBD_ATARI_OUT_3V3_GPIO);  // BT-labeled LED off
+  mode_led_dim(KBD_USB_OUT_3V3_GPIO);    // USB-labeled LED dimmed
 }
 static inline void indicate_bt_mode(void) {
-  gpio_put(KBD_USB_OUT_3V3_GPIO, 0);
-  gpio_put(KBD_ATARI_OUT_3V3_GPIO, 1);
+  mode_led_off(KBD_USB_OUT_3V3_GPIO);    // USB-labeled LED off
+  mode_led_dim(KBD_ATARI_OUT_3V3_GPIO);  // BT-labeled LED dimmed
 }
 #else
 #define indicate_usb_mode() select_rp_keyboard_source()
