@@ -8,6 +8,14 @@
 // Provided by main.c
 void launch_config_cb(void);
 
+// Some USB hubs need their power/PLL/repeater circuit to settle before the host
+// starts enumerating, or a cold-boot enumeration attempt fails (seen on some
+// boards). Hold off bringing up the USB host until at least this long after
+// power-on. Measured from boot (RP2350 reset ~= power-on), not from reaching the
+// init call, so debug and release builds behave identically. Bump if a slow hub
+// still misses cold boot.
+#define USB_HUB_SETTLE_US 100000u
+
 static volatile bool original_mouse_timer_enabled = false;
 static volatile bool joystick_poll_timer_enabled = false;
 static volatile bool joystick_poll_usb = false;
@@ -79,6 +87,16 @@ int main_usb_loop(int prev_reset_state, int prev_config_state,
   DPRINTF("Initializing board...\n");
   hidinput_if_ring_init();
   board_init();
+
+  // Let a connected USB hub's circuit settle before the host enumerates.
+  // Sleep only the remainder of USB_HUB_SETTLE_US not already spent booting, so
+  // we never start the host sooner than that wall-clock point after power-on
+  // and never over-wait when boot was slow.
+  uint64_t boot_us = time_us_64();
+  if (boot_us < USB_HUB_SETTLE_US) {
+    sleep_us(USB_HUB_SETTLE_US - boot_us);
+  }
+
   DPRINTF("Initialising USB...\n");
 
   tusb_rhport_init_t host_init = {.role = TUSB_ROLE_HOST,
