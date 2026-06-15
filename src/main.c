@@ -15,6 +15,8 @@
 #elif defined(PICO_RP2350) && PICO_RP2350
 #include "hardware/regs/m33.h"
 #endif
+#include "hardware/sync.h"
+#include "hardware/timer.h"
 #if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
 #include "nativeloop.h"
 #endif
@@ -385,6 +387,10 @@ static int get_keyboard_mode_from_settings(void) {
   return (int)parsed;
 }
 
+// Fired on Core 1 by the pacing alarm. Intentionally empty: its only job is to
+// raise an IRQ on this core so the pacing loop's __wfe() wakes at the deadline.
+static void core1_pacing_alarm_cb(uint alarm_num) { (void)alarm_num; }
+
 static void core1_entry() {
   flash_safe_execute_core_init();
 
@@ -414,6 +420,13 @@ static void core1_entry() {
   rx_buffer_put(IKBD_TOD_SECOND);
   DPRINTF("Seeded IKBD time-of-day clock\n");
 
+  // Dedicated hardware alarm so the pacing loop can idle in __wfe() between run
+  // windows instead of busy-spinning. The callback is installed from Core 1, so
+  // the alarm IRQ fires on this core and wakes __wfe() at the deadline. Cuts
+  // Core 1 idle duty (and thus static power) without changing 6301 throughput.
+  int pacing_alarm = hardware_alarm_claim_unused(true);
+  hardware_alarm_set_callback(pacing_alarm, core1_pacing_alarm_cb);
+
   // Main loop in the HD6301 core
   DPRINTF("Entering HD6301 core loop...\n");
   while (true) {
@@ -427,6 +440,16 @@ static void core1_entry() {
       last_run_us = now_us;
       hd6301_run_clocks(IKBD_CYCLES_PER_LOOP);
       hd6301_tx_empty(1);
+    } else {
+      // Sleep until the next pacing deadline. set_target returns true if that
+      // deadline is already in the past (nothing armed); only then skip the
+      // wait and re-evaluate. The alarm IRQ — or any other event, e.g. the
+      // multicore-lockout FIFO IRQ during a flash write — wakes __wfe().
+      absolute_time_t due =
+          from_us_since_boot(last_run_us + IKBD_CYCLES_PER_LOOP);
+      if (!hardware_alarm_set_target(pacing_alarm, due)) {
+        __wfe();
+      }
     }
   }
 }
