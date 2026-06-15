@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.2.0 (2026-06-15)
+
+A power-and-thermal pass: the board now does exactly the same job at a fraction of the clock and voltage, so it draws less current and runs cooler — plus a couple of robustness fixes.
+
+### What you'll notice
+
+- **Lower power, runs cooler.** The board now runs at 96 MHz / 1.00 V instead of the previous 225 MHz / 1.20 V. Nothing about how it behaves changes — keyboard, mouse, joystick, USB and Bluetooth all work exactly as before — it just sips less current and stays cooler doing it.
+- **The mode LED is dimmer.** On Souffle the USB/BT indicator LED is now dimmed (still clearly lit, just not at full blast). It was on continuously, so at the new low power level it was a surprisingly large slice of the total draw.
+- **USB hubs come up more reliably from cold.** Some USB hubs occasionally failed to initialize when the board was powered on from cold. The firmware now gives the hub a moment to stabilize before starting the USB host, so it enumerates reliably.
+
+### Under the hood
+
+- Core clock dropped to 96 MHz at 1.00 V. The floor is set by the **CYW43 radio**, not the keyboard emulation: below ~96 MHz the radio's SPI bus stops enumerating (Bluetooth won't start), while the HD6301 emulator, the Atari serial link and USB are all comfortable far below that.
+- The HD6301 emulator core now idles in a low-power wait between its ~1 ms pacing windows instead of busy-spinning a whole core at 100%, with no change to emulation timing.
+- The Souffle mode-indicator LED is driven by PWM at low duty instead of full-on.
+- USB host start-up is held off briefly after power-on so a connected hub's power/PLL circuit has time to settle before enumeration.
+
 ## v1.1.0 (2026-05-16)
 
 A round of fixes focused on the Souffle (Pico 2 W) experience, plus the build system getting honest about what it actually does.

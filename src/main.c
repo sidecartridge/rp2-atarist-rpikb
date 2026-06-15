@@ -10,11 +10,14 @@
 #include "debug.h"
 #include "gconfig.h"
 #include "hardware/clocks.h"
+#include "hardware/pwm.h"
 #if defined(PICO_RP2040) && PICO_RP2040
 #include "hardware/regs/m0plus.h"
 #elif defined(PICO_RP2350) && PICO_RP2350
 #include "hardware/regs/m33.h"
 #endif
+#include "hardware/sync.h"
+#include "hardware/timer.h"
 #if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
 #include "nativeloop.h"
 #endif
@@ -300,13 +303,38 @@ static inline void select_no_source(void) {
 //       KBD_USB_OUT_3V3_GPIO   (GPIO 8) -> USB-labeled LED
 //   So we light exactly one at a time based on which RP mode is running.
 #if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_SOUFFLE_REV2
+// Active mode-indicator LED brightness as a PWM duty. The LED is held lit for
+// the entire session, so at the lowered core operating point it is a large
+// share of board current. ~20% keeps it clearly visible while cutting most of
+// that current. PWM frequency (sys_clk / (wrap+1) ~= 50 kHz) is far above any
+// visible flicker. Tune MODE_LED_PWM_LEVEL to taste.
+#define MODE_LED_PWM_WRAP 1000
+#define MODE_LED_PWM_LEVEL 200
+
+// Drive a mode-LED pin off (plain GPIO low).
+static inline void mode_led_off(uint pin) {
+  gpio_set_function(pin, GPIO_FUNC_SIO);
+  gpio_set_dir(pin, GPIO_OUT);
+  gpio_put(pin, 0);
+}
+
+// Drive a mode-LED pin dimmed via PWM at MODE_LED_PWM_LEVEL duty.
+static inline void mode_led_dim(uint pin) {
+  gpio_set_function(pin, GPIO_FUNC_PWM);
+  uint slice = pwm_gpio_to_slice_num(pin);
+  uint chan = pwm_gpio_to_channel(pin);
+  pwm_set_wrap(slice, MODE_LED_PWM_WRAP);
+  pwm_set_chan_level(slice, chan, MODE_LED_PWM_LEVEL);
+  pwm_set_enabled(slice, true);
+}
+
 static inline void indicate_usb_mode(void) {
-  gpio_put(KBD_ATARI_OUT_3V3_GPIO, 0);
-  gpio_put(KBD_USB_OUT_3V3_GPIO, 1);
+  mode_led_off(KBD_ATARI_OUT_3V3_GPIO);  // BT-labeled LED off
+  mode_led_dim(KBD_USB_OUT_3V3_GPIO);    // USB-labeled LED dimmed
 }
 static inline void indicate_bt_mode(void) {
-  gpio_put(KBD_USB_OUT_3V3_GPIO, 0);
-  gpio_put(KBD_ATARI_OUT_3V3_GPIO, 1);
+  mode_led_off(KBD_USB_OUT_3V3_GPIO);    // USB-labeled LED off
+  mode_led_dim(KBD_ATARI_OUT_3V3_GPIO);  // BT-labeled LED dimmed
 }
 #else
 #define indicate_usb_mode() select_rp_keyboard_source()
@@ -385,6 +413,10 @@ static int get_keyboard_mode_from_settings(void) {
   return (int)parsed;
 }
 
+// Fired on Core 1 by the pacing alarm. Intentionally empty: its only job is to
+// raise an IRQ on this core so the pacing loop's __wfe() wakes at the deadline.
+static void core1_pacing_alarm_cb(uint alarm_num) { (void)alarm_num; }
+
 static void core1_entry() {
   flash_safe_execute_core_init();
 
@@ -414,6 +446,13 @@ static void core1_entry() {
   rx_buffer_put(IKBD_TOD_SECOND);
   DPRINTF("Seeded IKBD time-of-day clock\n");
 
+  // Dedicated hardware alarm so the pacing loop can idle in __wfe() between run
+  // windows instead of busy-spinning. The callback is installed from Core 1, so
+  // the alarm IRQ fires on this core and wakes __wfe() at the deadline. Cuts
+  // Core 1 idle duty (and thus static power) without changing 6301 throughput.
+  int pacing_alarm = hardware_alarm_claim_unused(true);
+  hardware_alarm_set_callback(pacing_alarm, core1_pacing_alarm_cb);
+
   // Main loop in the HD6301 core
   DPRINTF("Entering HD6301 core loop...\n");
   while (true) {
@@ -427,6 +466,16 @@ static void core1_entry() {
       last_run_us = now_us;
       hd6301_run_clocks(IKBD_CYCLES_PER_LOOP);
       hd6301_tx_empty(1);
+    } else {
+      // Sleep until the next pacing deadline. set_target returns true if that
+      // deadline is already in the past (nothing armed); only then skip the
+      // wait and re-evaluate. The alarm IRQ — or any other event, e.g. the
+      // multicore-lockout FIFO IRQ during a flash write — wakes __wfe().
+      absolute_time_t due =
+          from_us_since_boot(last_run_us + IKBD_CYCLES_PER_LOOP);
+      if (!hardware_alarm_set_target(pacing_alarm, due)) {
+        __wfe();
+      }
     }
   }
 }

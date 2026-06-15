@@ -150,6 +150,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     pico_multicore
     pico_stdlib
     pico_stdio_uart
+    hardware_pwm
     pico_btstack_cyw43
     pico_btstack_classic
     pico_cyw43_arch_none
