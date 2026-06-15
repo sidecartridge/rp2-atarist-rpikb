@@ -99,11 +99,11 @@
 
 // Frequency constants.
 #define SAMPLE_DIV_FREQ (1.f)         // Sample frequency division factor.
-#define RP2040_CLOCK_FREQ_KHZ 225000  // Clock frequency in KHz (225MHz).
+#define RP2040_CLOCK_FREQ_KHZ 50000  // Clock frequency in KHz (50MHz).
 #define USB_CLOCK_FREQ_KHZ 48000      // Clock frequency in KHz (48MHz).
 
 // Voltage constants.
-#define RP2040_VOLTAGE VREG_VOLTAGE_1_20  // Voltage in 1.20 Volts.
+#define RP2040_VOLTAGE VREG_VOLTAGE_1_10  // Voltage in 1.10 Volts.
 #define VOLTAGE_VALUES                                                 \
   (const char *[]){"NOT VALID", "NOT VALID", "NOT VALID", "NOT VALID", \
                    "NOT VALID", "NOT VALID", "0.85v",     "0.90v",     \
