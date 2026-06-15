@@ -99,7 +99,7 @@
 
 // Frequency constants.
 #define SAMPLE_DIV_FREQ (1.f)         // Sample frequency division factor.
-#define RP2040_CLOCK_FREQ_KHZ 50000  // Clock frequency in KHz (50MHz).
+#define RP2040_CLOCK_FREQ_KHZ 96000  // Clock frequency in KHz (96MHz).
 #define USB_CLOCK_FREQ_KHZ 48000      // Clock frequency in KHz (48MHz).
 
 // Voltage constants.
