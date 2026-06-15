@@ -69,7 +69,7 @@ Custom linker scripts (`memmap_rp2-ikbd_default.ld`, `memmap_rp2-ikbd_rp2350.ld`
 
 The build runs **XIP (execute-in-place from flash)** — `.text` lives in flash and is fetched by the XIP cache during execution. Earlier revisions of `src/CMakeLists.txt` declared `PICO_DEFAULT_BINARY_TYPE=copy_to_ram` *after* `pico_sdk_init()` (too late) and the custom linker scripts never did the `AT > FLASH > RAM` staging copy_to_ram requires; the settings had no effect. Those lines are now removed. If a future change wants RAM execution for timing-jitter reasons, the linker scripts need a `memmap_copy_to_ram.ld`-style rewrite.
 
-Core clock is 50 MHz at 1.10 V (`RP2040_CLOCK_FREQ_KHZ`, `RP2040_VOLTAGE` in `constants.h`). The HD6301 emulator runs 1000 emulated cycles per ~1 ms pacing window, which keeps pace comfortably at this clock; the Atari UART (7812.5 baud) and the 48 MHz USB clock are derived independently and are unaffected by the sys-clock value.
+Core clock is 50 MHz at 1.00 V (`RP2040_CLOCK_FREQ_KHZ`, `RP2040_VOLTAGE` in `constants.h`). The HD6301 emulator runs 1000 emulated cycles per ~1 ms pacing window, which keeps pace comfortably at this clock; the Atari UART (7812.5 baud) and the 48 MHz USB clock are derived independently and are unaffected by the sys-clock value.
 
 ### Vendored dependencies
 
