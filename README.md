@@ -9,6 +9,8 @@ Two carrier boards are supported (both on Pico 2 W / RP2350):
 * **Croissant** — Native Atari input path + Bluetooth. You can plug original Atari joysticks and mice into the joystick port.
 * **Souffle** — USB host + Bluetooth. USB keyboards / mice / gamepads work directly.
 
+> 🛒 **Get the hardware:** [Croissant](https://sidecartridge.com/products/sidecartridge-croissant-atari-st/) or [Souffle](https://sidecartridge.com/products/sidecartridge-souffle-mega-st/)
+
 Typical use cases:
 
 * **Mega ST / Mega STe / TT with no keyboard**
