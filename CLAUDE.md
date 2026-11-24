@@ -87,17 +87,19 @@ Inherit the rules in `AGENTS.md` (clang-format, clang-tidy, naming, no unsolicit
 
 ## Planning artifacts
 
-Project-level planning (Epics / Stories / Tasks, progress tracking, design notes) lives under `docs/` at the repo root. `docs/` is **gitignored** (`.gitignore`) and is private to the author's local workspace. Treat it like scratch paper.
+Project-level planning (epics, stories, tasks, decisions, progress) lives under `docs/epics/` at the repo root. `docs/` is **gitignored** (`.gitignore`) and is private to the author's local workspace. Treat it like scratch paper.
 
-**Hard rule:** never reference the planning structure or any Epic/Story/Task identifier, number, slug, or index in any committed artifact. That means **no** mentions in:
-- commit messages, PR titles, or PR descriptions
-- `CHANGELOG.md` entries
-- source-code comments
-- any file outside `docs/` itself
+## Release workflow
 
-When writing a commit, describe the change in its own terms ("fix BT keyboard report layout", "consolidate booster-jump teardown") — not as "completes the booster-jump-safety epic" or similar.
+These rules apply to every new version:
 
-**Branch-to-Epic rule:** one branch per **Epic**, not per Story. A Story is a single commit on the Epic's branch (or a small set of related commits). The Epic ships as one PR containing the full sequence of Story commits. Branch names describe the work area in their own terms (e.g., `fix/booster-jump-safety`), never citing a planning ID. This keeps the public git history shaped around themes the user understands, not around the internal planning structure.
+- **A version starts with a release branch.** Create `release/vX.Y.Z` from `main`, where `vX.Y.Z` is exactly what `version.txt` will contain for that release.
+- **One branch per epic, cut from the release branch**, named `epic/NN-<slug>`. All work for the epic is committed there, including the `version.txt` bump in the first epic of a release.
+- **An epic's pull request targets `release/vX.Y.Z`, never `main`.** It is merged only after Diego has verified the epic on real hardware.
+- **`main` receives the release branch once**, when the whole version is done and verified. Only then is the tag pushed (`make tag`).
+- **The Booster repository pins this firmware by commit.** `rp2-atarist-rpikb-booster` builds whatever commit of this repository its submodule points at, so work in progress is pushed here (any branch) and the Booster side moves its pin to it. At release, the `vX.Y.Z` tag here must sit on exactly the commit the Booster release pins; the Booster's `make tag` and release workflow refuse otherwise.
+- **Nothing committed or pushed may name an epic, story, iteration, decision (`D-NN`), constraint (`C-NN`) or the `docs/epics/` folder**: code comments, documentation, changelog, README, commit messages, PR titles and descriptions. Epic branch names (`epic/NN-<slug>`) are the one exception. A planning identifier tells a reader of the repository nothing and cannot be looked up; write what the code does and why instead ("fix BT keyboard report layout", not "completes the booster-jump-safety epic"). Record the implementing commit hashes in the story's notes. Release check: `git grep -nIiE "EPIC-|STORY-|docs/epics|\b[CD]-[0-9]{2}\b" -- ':!CLAUDE.md' ':!AGENTS.md' ':!.gitignore'` comes back empty.
+- Commit only after Diego has approved the working-tree diff. Commit, push, open and merge pull requests only when Diego asks.
 
 ## Editing guardrails
 
