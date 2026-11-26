@@ -38,6 +38,11 @@
 #define PARAM_BT_GAMEPADSHOOT "BT_GAMEPAD_SHOOT"
 #define PARAM_BT_KB_LAYOUT "BT_KB_LAYOUT"
 #define PARAM_BT_KB_TYPE "BT_KB_TYPE"
+// Factory test (Souffle): set by the factory image, results written by this
+// firmware, shown by Booster. Both firmwares must define both keys: a stored
+// key missing from a firmware's defaults is dropped on its next save.
+#define PARAM_FACTORY_MODE "FACTORY_MODE"
+#define PARAM_FACTORY_RESULT "FACTORY_RESULT"
 
 #define GCONFIG_SUCCESS 0
 #define GCONFIG_INIT_ERROR -1

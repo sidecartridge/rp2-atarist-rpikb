@@ -28,7 +28,9 @@ static SettingsConfigEntry defaultEntries[] = {
     {PARAM_BT_MOUSE, SETTINGS_TYPE_STRING, ""},
     {PARAM_BT_GAMEPAD, SETTINGS_TYPE_STRING, ""},
     {PARAM_BT_GAMEPADSHOOT, SETTINGS_TYPE_INT,
-     "0"}};  // 0 -> Disabled, 1 -> Slowest , 10 > Fastest
+     "0"},  // 0 -> Disabled, 1 -> Slowest , 10 > Fastest
+    {PARAM_FACTORY_MODE, SETTINGS_TYPE_INT, "0"},        // 1 -> factory test
+    {PARAM_FACTORY_RESULT, SETTINGS_TYPE_STRING, ""}};  // the test's results
 
 enum {
   CONFIG_BUFFER_SIZE = 4096,
