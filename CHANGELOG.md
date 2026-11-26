@@ -7,6 +7,7 @@
 - Every build carries a build ID (the git commit, marked when built from uncommitted changes), and debug builds print it in their first console line.
 - Debug builds run the console at 921,600 baud, the same as Booster's, so one capture follows both firmwares.
 - Developer tools in `tools/dev/` build, flash and check a board through a Raspberry Pi Debug Probe.
+- Souffle factory test: with the `FACTORY_MODE` setting on (set only by the factory image), USB mode also checks the USB keyboard (the keys a to e) and all twelve joystick lines, then stores the result in `FACTORY_RESULT` and hands over to Booster, which shows it. Normal firmware behaviour is unchanged.
 
 ## v1.2.0 (2026-06-15)
 

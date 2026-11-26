@@ -79,7 +79,9 @@ hands them back; driving low is used instead of switching the pads to
 pull-down, which erratum RP2350-E9 can leave reading high. Souffle only:
 Croissant uses these GPIOs differently (refused when a cached ELF says the
 running build is a Croissant one). `factory` decodes the factory test's
-settings, FACTORY_MODE and FACTORY_RESULT.
+settings, FACTORY_MODE and FACTORY_RESULT, and, while the core firmware runs
+the test, its live state (lines low and seen, hold time, keystrokes,
+keyboard VID:PID) from the factory_live variable.
 
 Three rules, from the siblings:
 
@@ -1288,10 +1290,43 @@ def cmd_factory(args: argparse.Namespace) -> int:
                  if not seen >> (g - 10) & 1]
         print("  lines never seen low: " + (", ".join(never) or "none"))
     for key, label in (("pass", "pass"), ("kbd", "keystrokes"),
-                       ("held", "all low held (ms)"), ("vid", "keyboard VID:PID")):
+                       ("held", "all low held (ms)"), ("vid", "keyboard VID:PID"),
+                       ("keys", "letters a-e typed (mask, 1f = all)")):
         if key in fields:
             print(f"  {label}: {fields[key]}")
+    print_factory_live()
     return 0
+
+
+# The running test's state, factory_live_t in src/include/factory.h: seven
+# uint32 (state, seen_mask, low_mask, held_ms, max_held_ms, keystrokes,
+# keys_mask), then uint16 vid and pid.
+FACTORY_LIVE = struct.Struct("<7I2H")
+FACTORY_STATES = ("off", "waiting for all twelve lines", "all twelve held",
+                  "saving the result")
+
+
+def print_factory_live() -> None:
+    try:
+        elf = running_elf(None)
+    except SwdError as exc:
+        print(f"live: not read ({exc})")
+        return
+    sym = elf_symbols(elf, "factory_live").get("factory_live")
+    if not sym:
+        print("live: the running build has no factory test")
+        return
+    (state, seen, low, held, max_held, keys, letters, vid, pid) = FACTORY_LIVE.unpack(
+        read_memory(sym[0], FACTORY_LIVE.size))
+    print("live: " + (FACTORY_STATES[state] if state < len(FACTORY_STATES)
+                      else f"state {state}"))
+    if state:
+        print(f"  lines low now: {bin(low).count('1')} of 12 (mask {low:03x}), "
+              f"seen low: mask {seen:03x}")
+        print(f"  all low held: {held} ms now, {max_held} ms longest")
+        typed = "".join(c for n, c in enumerate("abcde") if letters >> n & 1)
+        print(f"  keystrokes: {keys}, letters typed: {typed or 'none'} of abcde, "
+              f"keyboard {vid:04x}:{pid:04x}")
 
 
 def build_parser() -> argparse.ArgumentParser:

@@ -1,5 +1,6 @@
 #include "hidinput.h"
 
+#include "factory.h"
 #include "gconfig.h"
 
 // Atari ST key matrix indices for modifier keys
@@ -211,6 +212,10 @@ void tuh_hid_mount_cb(uint8_t dev_addr, uint8_t instance,
   // Record that this device has a boot keyboard interface
   if (itf_protocol == HID_ITF_PROTOCOL_KEYBOARD) {
     s_hid_dev_has_boot_keyboard[dev_addr] = true;
+    uint16_t vid = 0;
+    uint16_t pid = 0;
+    tuh_vid_pid_get(dev_addr, &vid, &pid);
+    factory_note_keyboard(vid, pid);
   }
 
   // Workaround: keyboards often expose a secondary HID interface (03/00/00).
@@ -305,7 +310,17 @@ void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
         uint8_t st =
             stkeys_translate_hid(layout, layout_type, cur_code, &shift_active,
                                  &alt_active, &ctrl_active);
-        if (st) key_states[st] = 1;
+        if (st) {
+          key_states[st] = 1;
+          bool was_pressed = false;
+          for (int j = 0; j < 6; j++) {
+            if (prev_kbd_report.keycode[j] == cur_code) {
+              was_pressed = true;
+              break;
+            }
+          }
+          if (!was_pressed) factory_note_keystroke(cur_code);
+        }
       }
 
       // Handle modifier keys (set every time)

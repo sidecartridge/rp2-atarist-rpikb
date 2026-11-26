@@ -156,7 +156,7 @@ python3 tools/dev/swd.py clock                              # 96 MHz / 1.00 V lo
 python3 tools/dev/swd.py gpio                               # CONFIG and the joystick lines
 python3 tools/dev/swd.py drive-low all                      # joystick lines low (Souffle)
 python3 tools/dev/swd.py release all                        # hand them back
-python3 tools/dev/swd.py factory                            # FACTORY_MODE and FACTORY_RESULT
+python3 tools/dev/swd.py factory                            # factory settings, and the live test
 ```
 
 The settings sector (`0x101FD000`, shared by both firmwares) holds 127-byte entries: a 30-byte key,

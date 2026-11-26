@@ -123,6 +123,7 @@ add_subdirectory(settings)
 # Tell CMake where to find the executable source file
 add_executable(${PROJECT_NAME} 
     main.c
+    factory.c
     gconfig.c
     hidinput.c
     joystick.c
