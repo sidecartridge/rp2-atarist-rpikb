@@ -56,6 +56,9 @@ Follow `.clang-format` and `.clang-tidy` in the repo root.
 ## Tests
 - There is **no first-party test suite** in this repo.
 - Validation is typically done by building the firmware and testing on device.
+- With a Raspberry Pi Debug Probe attached, use `tools/dev/` (README there): `flash.sh` to build,
+  flash and verify, `swd.py` to read the running board, `console.py watch` for the debug console,
+  and the `*_harness.py` scripts for repeatable checks. One tool owns the probe and UART at a time.
 
 ---
 ## Code style guidelines

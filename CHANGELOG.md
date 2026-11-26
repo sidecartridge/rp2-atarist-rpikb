@@ -1,5 +1,13 @@
 # Changelog
 
+## v1.3.0 (unreleased)
+
+### Under the hood
+
+- Every build carries a build ID (the git commit, marked when built from uncommitted changes), and debug builds print it in their first console line.
+- Debug builds run the console at 921,600 baud, the same as Booster's, so one capture follows both firmwares.
+- Developer tools in `tools/dev/` build, flash and check a board through a Raspberry Pi Debug Probe.
+
 ## v1.2.0 (2026-06-15)
 
 A power-and-thermal pass: the board now does exactly the same job at a fraction of the clock and voltage, so it draws less current and runs cooler — plus a couple of robustness fixes.
