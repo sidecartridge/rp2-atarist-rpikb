@@ -28,7 +28,11 @@ cmake --build --preset souffle-debug
 
 Each preset writes to its own out-of-source dir at the repo root: `build-<flavor>-<kind>/`. The presets set `CMAKE_BUILD_TYPE` and the `BOARD_TARGET` env var; `build.sh` additionally exports `PICO_BOARD`, `PICO_PLATFORM`, `DEBUG_MODE`, and the release-version env vars that `src/CMakeLists.txt` reads.
 
-There is **no test suite**. Validation happens by flashing the UF2 and exercising the firmware on real hardware.
+There is **no test suite**. Validation happens on real hardware, through the developer tools below.
+
+## Developer tools
+
+`tools/dev/` (see its `README.md`) builds, flashes and checks a Souffle or Croissant board through a Raspberry Pi Debug Probe (SWD + UART0 on GPIO 0/1), without the firmware's help: `flash.sh <flavor> <release|debug>` builds out of tree against worktrees of the pinned SDKs, flashes only the core firmware's region and verifies the build runs; `swd.py` reads which image runs, build IDs, settings, clock, GPIO levels and crash state, presses CONFIG (`boot booster`), and drives Souffle's joystick lines low (`drive-low`); `console.py watch` captures the 921,600 baud debug console; `tools_harness.py` and `boot_harness.py` run repeatable hardware checks. Use them for hardware verification instead of asking for console logs. Rules: one owner per probe and UART (Booster's tools share them), and `MODE` 255 sends the board straight into Booster, so set `MODE` first. The tools never write `BOOT_FEATURE`: a value other than `IKBD` makes this firmware erase all settings.
 
 ## Architecture
 
