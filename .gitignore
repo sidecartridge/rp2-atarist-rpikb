@@ -63,3 +63,8 @@ secrets.sh
 *.uf2
 .claude/
 docs/
+
+tools/dev/builds/
+tools/dev/sdk/
+tools/dev/logs/
+__pycache__/
