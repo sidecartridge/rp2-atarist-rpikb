@@ -261,8 +261,11 @@ if(${_DEBUG} STREQUAL "0")
 else()
     pico_enable_stdio_uart(${PROJECT_NAME} 1)
     # Same console speed as Booster, which shares UART0 and the debug probe.
+    # TinyUSB's board_init(), which the USB loop calls, reopens the console
+    # UART at CFG_BOARD_UART_BAUDRATE, so it gets the same rate.
     target_compile_definitions(${PROJECT_NAME} PRIVATE
-        PICO_DEFAULT_UART_BAUD_RATE=921600)
+        PICO_DEFAULT_UART_BAUD_RATE=921600
+        CFG_BOARD_UART_BAUDRATE=921600)
 endif()
 
 # Pass these values to the C compiler
