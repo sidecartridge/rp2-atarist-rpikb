@@ -1,5 +1,7 @@
 #include "usbloop.h"
 
+#include "factory.h"
+
 #include "hardware/irq.h"
 #include "hardware/resets.h"
 #include "mode_shutdown.h"
@@ -196,10 +198,17 @@ int main_usb_loop(int prev_reset_state, int prev_config_state,
   // In USB mode this applies to both USB-fed and GPIO-native joystick paths.
   joystick_set_autoshoot(joystick_usb, joystick_autoshoot);
 
+  // FACTORY_MODE 1 runs the factory test alongside the normal USB mode.
+  factory_init();
+
   // If configuration pin is already asserted, jump to configuration
   // immediately. jump_to_booster_app() dispatches usbloop_shutdown_for_jump()
-  // via mode_shutdown_for_jump() — no need to call it explicitly here.
+  // via mode_shutdown_for_jump() — no need to call it explicitly here. During
+  // the factory test, CONFIG ends the test first (as a failure).
   if (prev_config_state) {
+    if (factory_active()) {
+      factory_finish(true);
+    }
     launch_config_cb();
   }
 
@@ -269,9 +278,14 @@ int main_usb_loop(int prev_reset_state, int prev_config_state,
                 prev_config_state, config_state);
         prev_config_state = config_state;
         if (config_state) {
+          if (factory_active()) {
+            factory_finish(true);
+          }
           launch_config_cb();
         }
       }
+
+      factory_poll();
     }
 
 #if defined(BOARD_TARGET) && BOARD_TARGET == BOARD_TARGET_CROISSANT_REV2
