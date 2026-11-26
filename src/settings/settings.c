@@ -14,14 +14,23 @@
  * @brief Verify the format of a given key (uppercase, numbers, or '_').
  */
 static int checkKeyFormat(const char key[SETTINGS_MAX_KEY_LENGTH]) {
+  // A stored key need not be terminated: read at most its 30 bytes.
+  size_t len = strnlen(key, SETTINGS_MAX_KEY_LENGTH);
+
   // Check if the key is empty
-  if (strlen(key) == 0) {
+  if (len == 0) {
     DPRINTF("Error: Key is empty.\n");
     return -1;  // Invalid key format
   }
 
+  // A key that fills all 30 bytes has no terminator
+  if (len == SETTINGS_MAX_KEY_LENGTH) {
+    DPRINTF("Error: Key is not terminated.\n");
+    return -1;  // Invalid key format
+  }
+
   // Loop through each character in the key
-  for (size_t i = 0; i < strlen(key); i++) {
+  for (size_t i = 0; i < len; i++) {
     char chr = key[i];
 
     // Check if the character is not an uppercase letter, digit or underscore
@@ -158,10 +167,11 @@ static int settingsLoadAllEntries(SettingsContext *ctx,
   DPRINTF("Magic value found in FLASH: %lu. Loading existing values.\n",
           storedMagic);
 
-  // Now read each entry in a loop
-  // We'll simply read as many entries as we can, up to numEntries
+  // Now read each entry in a loop, until the first empty or invalid entry,
+  // up to the sector's capacity: a stored key this firmware does not know is
+  // skipped without taking the place of one it knows.
   uint16_t count = 0;
-  while (count < numEntries) {
+  while (count < maxEntries) {
     SettingsConfigEntry entry = {0};
     memcpy(&entry, currentAddress, sizeof(SettingsConfigEntry));
     currentAddress += sizeof(SettingsConfigEntry);
@@ -243,6 +253,9 @@ int settings_init(SettingsContext *ctx,
     DPRINTF("Error: Unable to allocate memory for config entries.\n");
     return -1;
   }
+  // settings_save() programs the whole buffer: after the last entry it must
+  // hold zeros (an empty key ends the entries on load), not RAM contents.
+  memset(ctx->configData.entries, 0, ctx->flashSettingsSize);
   ctx->configData.count = 0;
 
   // 4) Build the 32-bit magic from (magic << 16) | version

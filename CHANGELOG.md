@@ -11,6 +11,7 @@
 - Every build carries a build ID (the git commit, marked when built from uncommitted changes), and debug builds print it in their first console line.
 - Debug builds run the console at 921,600 baud, the same as Booster's, so one capture follows both firmwares.
 - Developer tools in `tools/dev/` build, flash and check a board through a Raspberry Pi Debug Probe.
+- Settings are saved with zeros after the last entry instead of leftover memory, and loading reads up to that end marker. A firmware that adds settings (as this one does) now loads an older sector reliably, and a stored setting it does not know no longer pushes one it knows back to its default.
 - Souffle factory test: with the `FACTORY_MODE` setting on (set only by the factory image), USB mode also checks the USB keyboard (the keys a to e) and all twelve joystick lines, then stores the result in `FACTORY_RESULT` and hands over to Booster, which shows it. Normal firmware behaviour is unchanged.
 
 ## v1.2.0 (2026-06-15)
