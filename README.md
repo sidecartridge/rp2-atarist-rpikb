@@ -67,6 +67,8 @@ Examples:
 ./build.sh pico2_w debug final souffle
 ```
 
+To build, flash and check a board through a Raspberry Pi Debug Probe, see [`tools/dev/README.md`](tools/dev/README.md).
+
 Manual build (no script):
 
 ```sh
@@ -85,6 +87,8 @@ cmake --build build -j
    * On **Croissant**, hold the Atari's keyboard reset for 10+ seconds (3–10 s just toggles the IKBD source).
 
 The configuration app is a separate firmware that lives in its own flash region. The IKBD firmware tears down whatever it's doing (USB host, Bluetooth, native input) before handing control over, so the jump is clean. When you're done, reboot and you're back in the active mode.
+
+Mouse clicks from the keyboard: TOS moves the pointer with ALT+arrow keys and clicks with ALT+Insert (left) and ALT+CLR/HOME (right). Keyboards without those keys can use **ALT+Backspace** for the left click and **ALT+Delete** for the right click, on both USB and Bluetooth.
 
 Notes:
 - Bluetooth uses Bluepad32. Some devices may need specific pairing steps. Pairings persist across reboots once configured.

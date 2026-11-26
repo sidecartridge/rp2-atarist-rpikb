@@ -1,10 +1,12 @@
 # Changelog
 
-## v1.3.0 (unreleased)
+## v1.3.0 (2026-11-26)
+
+USB keyboards learn the Bluetooth mouse-click shortcuts, settings load reliably across firmware updates, and Souffle boards get a factory test.
 
 ### What you'll notice
 
-- **Mouse clicks from a USB keyboard without Insert.** As with Bluetooth keyboards, ALT+Backspace now acts as ALT+Insert (the TOS left mouse click) and ALT+Delete as CLR/HOME, so compact and Mac-style USB keyboards can click without a mouse.
+- **Mouse clicks from a USB keyboard without Insert.** As with Bluetooth keyboards, ALT+Backspace now acts as ALT+Insert (the TOS left mouse click) and ALT+Delete as ALT+CLR/HOME (the right click), so compact and Mac-style USB keyboards without Insert or CLR/HOME can click without a mouse.
 
 ### Under the hood
 
