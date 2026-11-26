@@ -250,21 +250,63 @@ void tuh_hid_unmount_cb(uint8_t dev_addr, uint8_t instance) {
           instance);
 }
 
+// Keyboard shortcuts, the same as the Bluetooth path's (btloop.c): with ALT
+// held, Backspace becomes Insert and Ctrl is dropped (ALT+Insert is the TOS
+// left mouse click, for keyboards without Insert), and Delete becomes
+// CLR/HOME with ALT dropped.
+static void hidinput_apply_shortcuts(hid_keyboard_report_t* report) {
+  if ((report->modifier &
+       (KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_RIGHTALT)) == 0) {
+    return;
+  }
+  bool insert_replaced = false;
+  bool clrhome_replaced = false;
+  for (int i = 0; i < 6; i++) {
+    if (report->keycode[i] == HID_KEY_BACKSPACE) {
+      report->keycode[i] = HID_KEY_INSERT;
+      insert_replaced = true;
+    }
+  }
+  if (insert_replaced) {
+    report->modifier &=
+        (uint8_t)~(KEYBOARD_MODIFIER_LEFTCTRL | KEYBOARD_MODIFIER_RIGHTCTRL);
+  }
+  for (int i = 0; i < 6; i++) {
+    if (report->keycode[i] == HID_KEY_DELETE) {
+      report->keycode[i] = HID_KEY_HOME;
+      clrhome_replaced = true;
+    }
+  }
+  if (clrhome_replaced) {
+    report->modifier &=
+        (uint8_t)~(KEYBOARD_MODIFIER_LEFTALT | KEYBOARD_MODIFIER_RIGHTALT);
+  }
+}
+
 void tuh_hid_report_received_cb(uint8_t dev_addr, uint8_t instance,
                                 const uint8_t* report, uint16_t len) {
   uint8_t const itf_protocol = tuh_hid_interface_protocol(dev_addr, instance);
 
   switch (itf_protocol) {
     case HID_ITF_PROTOCOL_KEYBOARD: {
-      // previous report to check key released
+      // previous report (after the shortcuts) to check key released
       static hid_keyboard_report_t prev_kbd_report = {0, 0, {0}};
-      hid_keyboard_report_t const* cur = (hid_keyboard_report_t const*)report;
 
       // If report length matches and contents are identical, skip work
       if (len >= sizeof(hid_keyboard_report_t) &&
-          memcmp(cur, &prev_kbd_report, sizeof(hid_keyboard_report_t)) == 0) {
+          memcmp(report, &prev_kbd_report, sizeof(hid_keyboard_report_t)) ==
+              0) {
         break;  // nothing changed
       }
+
+      // Work on a copy with the shortcuts applied, and keep that copy as the
+      // previous report: releasing ALT before Backspace then releases the
+      // Insert it was turned into.
+      hid_keyboard_report_t shortcut_report = {0, 0, {0}};
+      memcpy(&shortcut_report, report,
+             len < sizeof(shortcut_report) ? len : sizeof(shortcut_report));
+      hidinput_apply_shortcuts(&shortcut_report);
+      hid_keyboard_report_t const* cur = &shortcut_report;
 
       const char* layout = hidinput_get_usb_layout();
       const char* layout_type = hidinput_get_usb_layout_type();

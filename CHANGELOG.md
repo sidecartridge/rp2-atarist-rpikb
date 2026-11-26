@@ -2,6 +2,10 @@
 
 ## v1.3.0 (unreleased)
 
+### What you'll notice
+
+- **Mouse clicks from a USB keyboard without Insert.** As with Bluetooth keyboards, ALT+Backspace now acts as ALT+Insert (the TOS left mouse click) and ALT+Delete as CLR/HOME, so compact and Mac-style USB keyboards can click without a mouse.
+
 ### Under the hood
 
 - Every build carries a build ID (the git commit, marked when built from uncommitted changes), and debug builds print it in their first console line.
